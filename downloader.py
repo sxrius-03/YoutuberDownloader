@@ -2,7 +2,7 @@ import yt_dlp
 import os
 import json
 import time
-from utils import PATHS, get_binary_path, sanitizar_nome
+from app.utils import PATHS, get_binary_path, sanitizar_nome
 
 class YouTubeEngine:
     def __init__(self):
