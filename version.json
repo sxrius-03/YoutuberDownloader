@@ -1,0 +1,11 @@
+{
+    "version": "1.0.0",
+    "release_date": "2023-10-27",
+    "changelog": "Versão inicial modularizada.",
+    "force_update": true,
+    "files": [
+        "utils.py",
+        "downloader.py",
+        "interface.py"
+    ]
+}
