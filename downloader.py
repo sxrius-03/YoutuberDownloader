@@ -55,12 +55,13 @@ class YouTubeEngine:
         erros = []
 
         # Estratégias definidas em ordem de qualidade/prioridade
+        # Nova ordem sugerida para 2026
         estrategias = [
-            ("Web Padrão", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True}),
-            ("Web + Cookies", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'cookiefile': self.cookies_txt}),
+            ("Smart TV", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['tv']}}}),
             ("iOS", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['ios']}}}),
             ("Android", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['android']}}}),
-            ("Smart TV", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['tv']}}})
+            ("Web + Cookies", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'cookiefile': self.cookies_txt}),
+            ("Web Padrão", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True}),
         ]
 
         for nome, opts in estrategias:
