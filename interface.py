@@ -6,15 +6,14 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                              QTabWidget, QProgressBar, QComboBox, QRadioButton, 
                              QButtonGroup, QFileDialog, QMessageBox, QTableWidget, 
-                             QTableWidgetItem, QHeaderView, QFrame, QAbstractItemView)
+                             QTableWidgetItem, QHeaderView, QFrame, QAbstractItemView, QTextEdit)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QIcon, QCursor, QAction
 
-# Importa a lógica dos arquivos anteriores
 from app.downloader import YouTubeEngine
 from app.utils import PATHS, SETTINGS_FILE, HISTORY_FILE, carregar_json, salvar_json, formatar_tamanho, sanitizar_nome
 
-# --- ESTILO DARK MODERNO (CSS) ---
+# --- ESTILO DARK MODERNO ---
 STYLESHEET = """
 QMainWindow { background-color: #1e1e1e; }
 QWidget { color: #ffffff; font-family: 'Segoe UI', Arial; font-size: 14px; }
@@ -34,11 +33,12 @@ QTableWidget { background-color: #252526; gridline-color: #3a3a3a; border: none;
 QHeaderView::section { background-color: #333337; padding: 5px; border: none; font-weight: bold; }
 QTableWidget::item { padding: 5px; }
 QTableWidget::item:selected { background-color: #37373d; }
+QTextEdit { background-color: #1e1e1e; border: 1px solid #333; font-family: Consolas, Monospace; font-size: 12px; }
 """
 
-# --- WORKERS (THREADS PARA NÃO TRAVAR A TELA) ---
+# --- WORKERS SINGLE ---
 class AnalysisWorker(QThread):
-    finished = pyqtSignal(dict, dict, str) # info, opts, strategy_name
+    finished = pyqtSignal(dict, dict, str)
     error = pyqtSignal(str)
 
     def __init__(self, engine, url):
@@ -48,14 +48,14 @@ class AnalysisWorker(QThread):
 
     def run(self):
         try:
-            info, opts, strat = self.engine.analisar_camaleao(self.url)
+            info, opts, strat = self.engine.analisar_camaleao(self.url, is_playlist=False)
             self.finished.emit(info, opts, strat)
         except Exception as e:
             self.error.emit(str(e))
 
 class DownloadWorker(QThread):
-    progress = pyqtSignal(float, str) # percent, status text
-    finished = pyqtSignal()
+    progress = pyqtSignal(float, str)
+    finished = pyqtSignal(dict) # Retorna info pra salvar histórico
     error = pyqtSignal(str)
 
     def __init__(self, engine, url, path, filename, type_, res, opts):
@@ -77,101 +77,138 @@ class DownloadWorker(QThread):
                     self.progress.emit(val, f"Baixando: {int(val)}%")
                 except: pass
             elif d['status'] == 'finished':
-                self.progress.emit(100, "Processando finalização...")
+                self.progress.emit(100, "Processando...")
 
         try:
-            self.engine.baixar(self.url, self.path, self.filename, self.type_, self.res, self.opts, hook)
-            self.finished.emit()
+            info = self.engine.baixar(self.url, self.path, self.filename, self.type_, self.res, self.opts, hook)
+            self.finished.emit(info)
         except Exception as e:
             self.error.emit(str(e))
+
+# --- WORKERS PLAYLIST ---
+class PlaylistAnalysisWorker(QThread):
+    finished = pyqtSignal(dict, dict, str)
+    error = pyqtSignal(str)
+
+    def __init__(self, engine, url):
+        super().__init__()
+        self.engine = engine
+        self.url = url
+
+    def run(self):
+        try:
+            # is_playlist=True força o extract_flat
+            info, opts, strat = self.engine.analisar_camaleao(self.url, is_playlist=True)
+            self.finished.emit(info, opts, strat)
+        except Exception as e:
+            self.error.emit(str(e))
+
+class PlaylistDownloadWorker(QThread):
+    log = pyqtSignal(str)
+    video_finished = pyqtSignal(dict) # Para histórico individual
+    finished = pyqtSignal()
+
+    def __init__(self, engine, video_list, path, type_, res, opts):
+        super().__init__()
+        self.engine = engine
+        self.video_list = video_list
+        self.path = path
+        self.type_ = type_
+        self.res = res
+        self.opts = opts
+        self.is_running = True
+
+    def run(self):
+        total = len(self.video_list)
+        for i, entry in enumerate(self.video_list):
+            if not self.is_running: break
+            
+            title = entry.get('title', 'Video')
+            url = entry.get('url') or entry.get('webpage_url')
+            clean_title = sanitizar_nome(title)
+            
+            self.log.emit(f"[{i+1}/{total}] Baixando: {title}")
+            
+            try:
+                # Hook interno simples só para não quebrar, playlist não tem barra de progresso individual detalhada
+                def dummy_hook(d): pass 
+                
+                info = self.engine.baixar(url, self.path, clean_title, self.type_, self.res, self.opts, dummy_hook)
+                self.video_finished.emit(info)
+                self.log.emit(f"✅ Sucesso: {title}")
+            except Exception as e:
+                self.log.emit(f"❌ Erro em {title}: {str(e)}")
+        
+        self.finished.emit()
+
+    def stop(self):
+        self.is_running = False
 
 # --- JANELA PRINCIPAL ---
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YouTube Downloader Ultimate - V5.3 (PyQt6)")
+        self.setWindowTitle("YouTube Downloader Ultimate - V5.4 (Full)")
         self.resize(1000, 750)
         self.setStyleSheet(STYLESHEET)
 
-        # Inicializa Engine
         self.engine = YouTubeEngine()
         self.settings = carregar_json(SETTINGS_FILE, {"paths": []})
         self.history = carregar_json(HISTORY_FILE, [])
         self.download_folder = self.settings["paths"][0] if self.settings["paths"] else os.path.join(os.path.expanduser("~"), "Downloads")
 
-        # Widget Central
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # Abas
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
 
         self.setup_single_tab()
-        self.setup_playlist_tab() # Pode implementar similar ao single
+        self.setup_playlist_tab()
         self.setup_history_tab()
 
-        # Variáveis de Estado
-        self.current_video_info = None
-        self.current_video_opts = None
-
     # ==========================
-    # ABA 1: DOWNLOAD ÚNICO
+    # ABA 1: SINGLE
     # ==========================
     def setup_single_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setSpacing(15)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # 1. URL Input
+        # URL
         url_frame = QFrame()
         url_layout = QHBoxLayout(url_frame)
         url_layout.setContentsMargins(0,0,0,0)
-        
-        lbl_url = QLabel("Link do Vídeo:")
         self.txt_url = QLineEdit()
-        self.txt_url.setPlaceholderText("Cole o link aqui...")
+        self.txt_url.setPlaceholderText("Cole o link do vídeo aqui...")
         self.btn_analyze = QPushButton("Analisar")
-        self.btn_analyze.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_analyze.clicked.connect(self.iniciar_analise)
-
-        url_layout.addWidget(lbl_url)
+        url_layout.addWidget(QLabel("Link:"))
         url_layout.addWidget(self.txt_url)
         url_layout.addWidget(self.btn_analyze)
         layout.addWidget(url_frame)
 
-        # 2. Status Label
-        self.lbl_status = QLabel("Aguardando link...")
-        self.lbl_status.setStyleSheet("color: #aaaaaa; font-style: italic;")
+        self.lbl_status = QLabel("Aguardando...")
+        self.lbl_status.setStyleSheet("color: gray;")
         layout.addWidget(self.lbl_status)
 
-        # 3. Detalhes (Group Hidden initially)
+        # Detalhes
         self.details_frame = QFrame()
         self.details_frame.setVisible(False)
         det_layout = QVBoxLayout(self.details_frame)
-        det_layout.setContentsMargins(0, 10, 0, 10)
-
-        # Título Editável
-        lbl_title = QLabel("Nome do Arquivo:")
+        
+        det_layout.addWidget(QLabel("Nome do Arquivo:"))
         self.txt_filename = QLineEdit()
-        det_layout.addWidget(lbl_title)
         det_layout.addWidget(self.txt_filename)
 
-        # Opções (Radio + Combo)
         opts_layout = QHBoxLayout()
-        
-        self.radio_group = QButtonGroup()
         self.rb_video = QRadioButton("Vídeo (MP4)")
         self.rb_audio = QRadioButton("Áudio (MP3)")
         self.rb_video.setChecked(True)
-        self.radio_group.addButton(self.rb_video)
-        self.radio_group.addButton(self.rb_audio)
         
         self.cb_quality = QComboBox()
         self.cb_quality.setMinimumWidth(150)
-
         opts_layout.addWidget(self.rb_video)
         opts_layout.addWidget(self.rb_audio)
         opts_layout.addStretch()
@@ -179,15 +216,13 @@ class MainWindow(QMainWindow):
         opts_layout.addWidget(self.cb_quality)
         det_layout.addLayout(opts_layout)
 
-        # Seleção de Pasta
         path_layout = QHBoxLayout()
         self.cb_path = QComboBox()
         self.cb_path.addItems(self.settings["paths"] if self.settings["paths"] else [self.download_folder])
         self.cb_path.setEditable(True)
         btn_browse = QPushButton("...")
         btn_browse.setFixedWidth(40)
-        btn_browse.clicked.connect(self.escolher_pasta)
-
+        btn_browse.clicked.connect(lambda: self.escolher_pasta(self.cb_path))
         path_layout.addWidget(QLabel("Salvar em:"))
         path_layout.addWidget(self.cb_path)
         path_layout.addWidget(btn_browse)
@@ -195,76 +230,48 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.details_frame)
 
-        # 4. Download e Progresso
         self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
         self.progress_bar.setVisible(False)
-        
-        self.btn_download = QPushButton("BAIXAR AGORA")
-        self.btn_download.setMinimumHeight(45)
-        self.btn_download.setStyleSheet("background-color: #2ea043; font-size: 16px;")
-        self.btn_download.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_download = QPushButton("BAIXAR")
+        self.btn_download.setStyleSheet("background-color: #2ea043; height: 40px;")
         self.btn_download.setEnabled(False)
         self.btn_download.clicked.connect(self.iniciar_download)
 
-        layout.addStretch() # Empurra tudo pra cima
+        layout.addStretch()
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.btn_download)
 
         self.tabs.addTab(tab, "Download Único")
 
-    # --- Lógica da Aba 1 ---
     def iniciar_analise(self):
         url = self.txt_url.text().strip()
         if not url: return
-
-        self.lbl_status.setText("Analisando (Tentando 5 estratégias)...")
-        self.lbl_status.setStyleSheet("color: #00aaff;")
+        self.lbl_status.setText("Analisando...")
         self.btn_analyze.setEnabled(False)
-        self.details_frame.setVisible(False)
-        self.btn_download.setEnabled(False)
-
-        # Inicia Thread
+        
         self.worker_analysis = AnalysisWorker(self.engine, url)
         self.worker_analysis.finished.connect(self.on_analysis_finished)
-        self.worker_analysis.error.connect(self.on_analysis_error)
+        self.worker_analysis.error.connect(self.on_error)
         self.worker_analysis.start()
 
-    def on_analysis_finished(self, info, opts, strat_name):
+    def on_analysis_finished(self, info, opts, strat):
         self.current_video_info = info
         self.current_video_opts = opts
+        self.lbl_status.setText(f"Pronto (Modo: {strat})")
         
-        self.lbl_status.setText(f"Sucesso! Estratégia usada: {strat_name}")
-        self.lbl_status.setStyleSheet("color: #4CAF50;")
-        self.btn_analyze.setEnabled(True)
+        self.txt_filename.setText(sanitizar_nome(info.get('title', 'video')))
         
-        # Preenche campos
-        title = sanitizar_nome(info.get('title', 'video'))
-        self.txt_filename.setText(title)
-        
-        # Preenche Resoluções
         self.cb_quality.clear()
         formats = info.get('formats', [])
-        resolucoes = set()
-        for f in formats:
-            if f.get('height'): resolucoes.add(f['height'])
-        lista = sorted(list(resolucoes), reverse=True)
-        if not lista: lista = ["Melhor Qualidade"]
-        
-        self.cb_quality.addItems([str(x) for x in lista])
+        resolucoes = sorted(list(set([f['height'] for f in formats if f.get('height')])), reverse=True)
+        if not resolucoes: resolucoes = ["Melhor"]
+        self.cb_quality.addItems([str(x) for x in resolucoes])
         
         self.details_frame.setVisible(True)
         self.btn_download.setEnabled(True)
-
-    def on_analysis_error(self, err_msg):
-        self.lbl_status.setText("Erro na análise.")
-        self.lbl_status.setStyleSheet("color: #ff5555;")
         self.btn_analyze.setEnabled(True)
-        QMessageBox.critical(self, "Erro", f"Falha ao analisar:\n{err_msg}")
 
     def iniciar_download(self):
-        if not self.current_video_info: return
-        
         url = self.txt_url.text()
         nome = self.txt_filename.text()
         pasta = self.cb_path.currentText()
@@ -272,49 +279,162 @@ class MainWindow(QMainWindow):
         
         tipo = "audio" if self.rb_audio.isChecked() else "video"
         res = self.cb_quality.currentText()
-
-        # UI Update
-        self.btn_download.setEnabled(False)
-        self.btn_analyze.setEnabled(False)
+        
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
+        self.btn_download.setEnabled(False)
+        self.btn_analyze.setEnabled(False)
 
-        # Thread de Download
         self.worker_download = DownloadWorker(self.engine, url, pasta, nome, tipo, res, self.current_video_opts)
-        self.worker_download.progress.connect(self.update_progress)
+        self.worker_download.progress.connect(lambda v, t: (self.progress_bar.setValue(int(v)), self.lbl_status.setText(t)))
         self.worker_download.finished.connect(self.on_download_finished)
-        self.worker_download.error.connect(self.on_download_error)
+        self.worker_download.error.connect(self.on_error)
         self.worker_download.start()
 
-    def update_progress(self, val, text):
-        self.progress_bar.setValue(int(val))
-        self.lbl_status.setText(text)
-
-    def on_download_finished(self):
-        self.lbl_status.setText("Download Concluído!")
+    def on_download_finished(self, info):
+        self.lbl_status.setText("Concluído!")
+        self.progress_bar.setVisible(False)
         self.btn_download.setEnabled(True)
         self.btn_analyze.setEnabled(True)
-        self.progress_bar.setVisible(False)
         
-        # Registra histórico
-        self.registrar_historico()
-        QMessageBox.information(self, "Sucesso", "Download finalizado com sucesso!")
+        tipo = "audio" if self.rb_audio.isChecked() else "video"
+        self.registrar_historico(info, self.cb_path.currentText(), tipo)
+        QMessageBox.information(self, "Sucesso", "Download finalizado!")
 
-    def on_download_error(self, err):
-        self.lbl_status.setText("Erro no download.")
+    def on_error(self, err):
+        self.lbl_status.setText("Erro.")
         self.btn_download.setEnabled(True)
         self.btn_analyze.setEnabled(True)
         QMessageBox.critical(self, "Erro", str(err))
 
     # ==========================
-    # ABA 2: PLAYLIST (Simplificada para brevidade)
+    # ABA 2: PLAYLIST
     # ==========================
     def setup_playlist_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.addWidget(QLabel("Para baixar Playlists, a lógica é similar."))
-        layout.addWidget(QLabel("Use o mesmo sistema de threads da aba 1."))
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # URL Input
+        url_frame = QFrame()
+        url_layout = QHBoxLayout(url_frame)
+        url_layout.setContentsMargins(0,0,0,0)
+        self.pl_url = QLineEdit()
+        self.pl_url.setPlaceholderText("Cole o link da Playlist...")
+        self.pl_btn_analyze = QPushButton("Carregar Lista")
+        self.pl_btn_analyze.clicked.connect(self.iniciar_analise_playlist)
+        url_layout.addWidget(QLabel("Playlist:"))
+        url_layout.addWidget(self.pl_url)
+        url_layout.addWidget(self.pl_btn_analyze)
+        layout.addWidget(url_frame)
+
+        # Opções (Escondidas inicialmente)
+        self.pl_opts_frame = QFrame()
+        self.pl_opts_frame.setVisible(False)
+        pl_opts_layout = QVBoxLayout(self.pl_opts_frame)
+
+        row1 = QHBoxLayout()
+        self.pl_rb_video = QRadioButton("Vídeo")
+        self.pl_rb_audio = QRadioButton("Áudio")
+        self.pl_rb_video.setChecked(True)
+        self.pl_combo_res = QComboBox()
+        self.pl_combo_res.addItems(["Melhor", "1080", "720", "480"])
+        row1.addWidget(self.pl_rb_video)
+        row1.addWidget(self.pl_rb_audio)
+        row1.addWidget(QLabel("Limite:"))
+        row1.addWidget(self.pl_combo_res)
+        pl_opts_layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        self.pl_cb_path = QComboBox()
+        self.pl_cb_path.addItems(self.settings["paths"])
+        self.pl_cb_path.setEditable(True)
+        pl_browse = QPushButton("...")
+        pl_browse.setFixedWidth(40)
+        pl_browse.clicked.connect(lambda: self.escolher_pasta(self.pl_cb_path))
+        row2.addWidget(QLabel("Salvar em:"))
+        row2.addWidget(self.pl_cb_path)
+        row2.addWidget(pl_browse)
+        pl_opts_layout.addLayout(row2)
+
+        self.lbl_pl_count = QLabel("0 vídeos encontrados.")
+        pl_opts_layout.addWidget(self.lbl_pl_count)
+
+        layout.addWidget(self.pl_opts_frame)
+
+        # Log de Progresso
+        self.pl_log = QTextEdit()
+        self.pl_log.setReadOnly(True)
+        layout.addWidget(self.pl_log)
+
+        self.pl_btn_download = QPushButton("BAIXAR PLAYLIST COMPLETA")
+        self.pl_btn_download.setStyleSheet("background-color: #b36b00; height: 45px;")
+        self.pl_btn_download.setEnabled(False)
+        self.pl_btn_download.clicked.connect(self.iniciar_download_playlist)
+        layout.addWidget(self.pl_btn_download)
+
         self.tabs.addTab(tab, "Playlist")
+        
+        # Estado Playlist
+        self.pl_entries = []
+        self.pl_opts_engine = None
+
+    def iniciar_analise_playlist(self):
+        url = self.pl_url.text()
+        if not url: return
+        self.pl_log.clear()
+        self.pl_log.append("Analisando playlist (buscando vídeos)...")
+        self.pl_btn_analyze.setEnabled(False)
+        self.pl_opts_frame.setVisible(False)
+
+        self.pl_worker_ana = PlaylistAnalysisWorker(self.engine, url)
+        self.pl_worker_ana.finished.connect(self.on_pl_ana_finished)
+        self.pl_worker_ana.error.connect(self.on_pl_error)
+        self.pl_worker_ana.start()
+
+    def on_pl_ana_finished(self, info, opts, strat):
+        self.pl_btn_analyze.setEnabled(True)
+        if 'entries' not in info:
+            self.pl_log.append("Erro: Nenhuma entrada encontrada.")
+            return
+
+        self.pl_entries = list(info['entries'])
+        self.pl_opts_engine = opts
+        
+        self.lbl_pl_count.setText(f"{len(self.pl_entries)} vídeos encontrados. (Modo: {strat})")
+        self.pl_log.append(f"Playlist carregada com {len(self.pl_entries)} itens.")
+        
+        self.pl_opts_frame.setVisible(True)
+        self.pl_btn_download.setEnabled(True)
+
+    def on_pl_error(self, err):
+        self.pl_log.append(f"ERRO FATAL: {err}")
+        self.pl_btn_analyze.setEnabled(True)
+
+    def iniciar_download_playlist(self):
+        self.pl_btn_download.setEnabled(False)
+        self.pl_btn_analyze.setEnabled(False)
+        self.pl_log.append("Iniciando downloads...")
+        
+        pasta = self.pl_cb_path.currentText()
+        self.salvar_path(pasta)
+        tipo = "audio" if self.pl_rb_audio.isChecked() else "video"
+        res = self.pl_combo_res.currentText()
+        if res == "Melhor": res = None
+
+        self.pl_worker_down = PlaylistDownloadWorker(
+            self.engine, self.pl_entries, pasta, tipo, res, self.pl_opts_engine
+        )
+        self.pl_worker_down.log.connect(self.pl_log.append)
+        self.pl_worker_down.video_finished.connect(lambda info: self.registrar_historico(info, pasta, tipo))
+        self.pl_worker_down.finished.connect(self.on_pl_finished)
+        self.pl_worker_down.start()
+
+    def on_pl_finished(self):
+        self.pl_log.append("--- FIM DA PLAYLIST ---")
+        self.pl_btn_download.setEnabled(True)
+        self.pl_btn_analyze.setEnabled(True)
+        QMessageBox.information(self, "Playlist", "Processo finalizado.")
 
     # ==========================
     # ABA 3: HISTÓRICO
@@ -323,24 +443,19 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Tabela
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["Data", "Título", "Tipo", "Tamanho", "Caminho"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch) # Título estica
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers) # Read only
-        
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.table)
 
-        # Botões
         btn_layout = QHBoxLayout()
-        btn_refresh = QPushButton("Atualizar")
+        btn_refresh = QPushButton("Atualizar Tabela")
         btn_refresh.clicked.connect(self.carregar_historico_tabela)
-        
-        btn_open = QPushButton("Abrir Pasta")
+        btn_open = QPushButton("Abrir Local do Arquivo")
         btn_open.clicked.connect(self.abrir_item_historico)
-
         btn_layout.addWidget(btn_refresh)
         btn_layout.addWidget(btn_open)
         layout.addLayout(btn_layout)
@@ -348,12 +463,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(tab, "Histórico")
         self.carregar_historico_tabela()
 
-    def registrar_historico(self):
-        info = self.current_video_info
+    def registrar_historico(self, info, pasta, tipo):
         item = {
             "title": info.get('title'),
-            "type": "audio" if self.rb_audio.isChecked() else "video",
-            "path": self.cb_path.currentText(),
+            "type": tipo,
+            "path": pasta,
             "size": info.get('filesize') or info.get('filesize_approx'),
             "date": datetime.now().strftime("%d/%m/%Y %H:%M")
         }
@@ -380,15 +494,15 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "Erro", "Pasta não encontrada.")
 
-    # --- Auxiliares ---
-    def escolher_pasta(self):
+    # --- AUXILIARES ---
+    def escolher_pasta(self, combo):
         folder = QFileDialog.getExistingDirectory(self, "Selecionar Pasta")
         if folder:
-            self.cb_path.setCurrentText(folder)
+            combo.setCurrentText(folder)
             self.salvar_path(folder)
 
     def salvar_path(self, folder):
-        if folder not in self.settings["paths"]:
+        if folder and folder not in self.settings["paths"]:
             self.settings["paths"].insert(0, folder)
             self.settings["paths"] = self.settings["paths"][:10]
             salvar_json(SETTINGS_FILE, self.settings)
