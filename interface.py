@@ -148,7 +148,7 @@ class PlaylistDownloadWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("YouTube Downloader Ultimate - V5.4 (Full)")
+        self.setWindowTitle("YouTube Downloader")
         self.resize(1000, 750)
         self.setStyleSheet(STYLESHEET)
 
