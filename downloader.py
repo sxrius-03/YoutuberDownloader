@@ -58,10 +58,11 @@ class YouTubeEngine:
         # Nova ordem sugerida para 2026
         estrategias = [
             ("Smart TV", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['tv']}}}),
+            ("Web Padrão", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True}),
             ("iOS", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['ios']}}}),
             ("Android", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['android']}}}),
             ("Web + Cookies", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'cookiefile': self.cookies_txt}),
-            ("Web Padrão", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True}),
+            
         ]
 
         for nome, opts in estrategias:
