@@ -11,12 +11,11 @@ class YouTubeEngine:
         self.cookies_txt = os.path.join(PATHS["root"], "cookies.txt")
         self.cookies_json = os.path.join(PATHS["root"], "cookies.json")
         
-        # Configura ambiente para o QuickJS (necessário para decriptar 4K)
+        # Configura ambiente para o QuickJS (necessário para decriptar 4K em alguns casos)
         qjs_dir = os.path.dirname(self.qjs_path)
         if os.path.exists(qjs_dir) and qjs_dir not in os.environ['PATH']:
             os.environ['PATH'] += os.pathsep + qjs_dir
 
-        # Tenta converter cookies ao iniciar a engine
         self._converter_cookies()
 
     def _converter_cookies(self):
@@ -48,45 +47,72 @@ class YouTubeEngine:
 
     def analisar_camaleao(self, url):
         """
-        Executa a estratégia de 5 passos para driblar o erro 403.
-        Retorna: (info_dict, opcoes_vencedoras, nome_da_estrategia)
+        Estratégia Camaleão V2 (Focada em Android Creator para evitar DRM)
         """
         self._limpar_cache()
         erros = []
+        
+        # Verifica se tem cookies para decidir se tenta a estratégia Web/TV com login
+        tem_cookies = os.path.exists(self.cookies_txt)
 
-        # Estratégias definidas em ordem de qualidade/prioridade
-        # Nova ordem sugerida para 2026
+        # LISTA DE ESTRATÉGIAS ATUALIZADA (Fevereiro 2026)
         estrategias = [
-            ("Smart TV", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['tv']}}}),
-            ("Web Padrão", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True}),
-            ("iOS", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['ios']}}}),
-            ("Android", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'extractor_args': {'youtube': {'player_client': ['android']}}}),
-            ("Web + Cookies", {'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 'cookiefile': self.cookies_txt}),
+            # 1. ANDROID CREATOR: Geralmente ignora bloqueios de bot e não tem DRM de música
+            ("Android Creator", {
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                'extractor_args': {'youtube': {'player_client': ['android_creator']}}
+            }),
             
+            # 2. ANDROID PADRÃO: O mais robusto historicamente
+            ("Android", {
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                'extractor_args': {'youtube': {'player_client': ['android']}}
+            }),
+
+            # 3. WEB (Só se tiver cookies - arriscado sem PO Token, mas tenta)
+            ("Web + Cookies", {
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True, 
+                'cookiefile': self.cookies_txt
+            }) if tem_cookies else None,
+
+            # 4. IOS (Tentativa válida, mas frequentemente bloqueada)
+            ("iOS", {
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                'extractor_args': {'youtube': {'player_client': ['ios']}}
+            }),
+            
+            # 5. SMART TV (Último recurso - Falha em músicas com DRM, bom para vídeos restritos por idade)
+            ("Smart TV", {
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                'extractor_args': {'youtube': {'player_client': ['tv']}}
+            }),
         ]
 
-        for nome, opts in estrategias:
-            # Pula estratégia de cookies se não tiver arquivo
-            if nome == "Web + Cookies" and not os.path.exists(self.cookies_txt):
-                continue
+        # Filtra estratégias None (caso não tenha cookies)
+        estrategias = [e for e in estrategias if e is not None]
 
+        for nome, opts in estrategias:
             try:
                 print(f"Tentando estratégia: {nome}...")
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                     return info, opts, nome
             except Exception as e:
-                erros.append(f"{nome}: {str(e)}")
-                # Se for erro de link inválido (não de bloqueio), para logo
-                if "videoid" in str(e).lower() and "incomplete" in str(e).lower():
+                msg_erro = str(e).lower()
+                erros.append(f"{nome}: {msg_erro}")
+                
+                # Se for DRM, sabemos que essa estratégia nunca vai funcionar para esse vídeo
+                if "drm" in msg_erro:
+                    print(f"-> Falha por DRM na estratégia {nome}. Pulando...")
+                    continue
+                
+                # Se o vídeo não existe, para tudo imediatamente
+                if "videoid" in msg_erro and ("incomplete" in msg_erro or "exist" in msg_erro):
                     raise e
 
-        raise Exception(f"Todas as estratégias falharam. Detalhes: {erros}")
+        raise Exception(f"Todas as estratégias falharam.\nLog: {erros}")
 
     def baixar(self, url, pasta, nome_arquivo, tipo, resolucao, opcoes_base, progress_hook):
-        """
-        Realiza o download usando as opções que venceram na análise.
-        """
         opts = opcoes_base.copy()
         
         # Configurações de Saída
@@ -94,10 +120,11 @@ class YouTubeEngine:
             'outtmpl': os.path.join(pasta, f"{nome_arquivo}.%(ext)s"),
             'ffmpeg_location': os.path.dirname(self.ffmpeg_path),
             'progress_hooks': [progress_hook],
-            'nocheckcertificate': True
+            'nocheckcertificate': True,
+            # Força o uso de ipv4 se ipv6 estiver causando timeout (comum no Brasil)
+            'source_address': '0.0.0.0' 
         })
 
-        # Configurações de Formato
         if tipo == 'audio':
             opts.update({
                 'format': 'bestaudio/best',
@@ -105,8 +132,8 @@ class YouTubeEngine:
                 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]
             })
         else:
-            # Lógica de resolução
             if resolucao and resolucao.isdigit():
+                # Tenta baixar o melhor vídeo até a resolução pedida
                 opts['format'] = f'bestvideo[height<={resolucao}]+bestaudio/best'
             else:
                 opts['format'] = 'bestvideo+bestaudio/best'
