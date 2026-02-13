@@ -1,58 +1,80 @@
 import sys
 import os
 import ctypes
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtGui import QIcon
+
+# --- DIAGNÓSTICO VISUAL NO TERMINAL ---
+print("--- INICIANDO LAUNCHER ---")
+print("[1] Importando bibliotecas do sistema...")
+
+try:
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+    from PyQt6.QtGui import QIcon
+    print("[2] PyQt6 importado com sucesso.")
+except ImportError as e:
+    print(f"ERRO FATAL: PyQt6 não encontrado. Instale com 'pip install PyQt6'. Detalhes: {e}")
+    sys.exit(1)
 
 # Estrutura local
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(BASE_DIR, "app")
 ICON_PATH = os.path.join(BASE_DIR, "icon.ico")
 
-# Garante que o Windows use o ícone correto na barra de tarefas (Taskbar)
+# --- CONFIGURAÇÃO DO WINDOWS (TASKBAR) ---
 try:
     myappid = 'youtube.downloader.ultimate.v5'
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-except ImportError:
-    pass
+except: pass
 
-def launch_main_app():
-    # 1. CRIA A APLICAÇÃO PRIMEIRO (Antes de qualquer lógica)
-    # Isso garante que QMessagebox funcione se der erro nos imports
-    app = QApplication(sys.argv)
+# --- INICIALIZAÇÃO DA APLICAÇÃO (GLOBAL) ---
+# Criamos a aplicação AQUI, fora de qualquer função, para ser a primeira coisa absoluta a rodar.
+print("[3] Criando instância QApplication...")
+app = QApplication(sys.argv)
+
+# Define ícone se existir
+if os.path.exists(ICON_PATH):
+    app.setWindowIcon(QIcon(ICON_PATH))
+
+def main():
+    print(f"[4] Verificando diretórios... Base: {BASE_DIR}")
     
-    # Define o ícone global imediatamente
-    if os.path.exists(ICON_PATH):
-        app.setWindowIcon(QIcon(ICON_PATH))
-
-    # Verifica se a pasta app existe
+    # Verifica interface.py
     interface_path = os.path.join(APP_DIR, "interface.py")
     if not os.path.exists(interface_path):
-        QMessageBox.critical(None, "Erro Fatal", f"O arquivo 'interface.py' não foi encontrado em:\n{interface_path}")
+        err_msg = f"ARQUIVO NÃO ENCONTRADO:\n{interface_path}\n\nVerifique se a pasta 'app' está junto do launcher."
+        print(f"ERRO: {err_msg}")
+        QMessageBox.critical(None, "Erro Fatal", err_msg)
         sys.exit(1)
 
     try:
-        # 2. Configura o caminho para encontrar os módulos
+        # Adiciona a raiz ao Path do Python para garantir que 'app.interface' seja achado
         if BASE_DIR not in sys.path:
             sys.path.insert(0, BASE_DIR)
-
-        # 3. Importa a Janela Principal (Aqui é onde o erro real costuma acontecer)
-        from app.interface import MainWindow
         
-        # 4. Inicia a Janela
+        print("[5] Importando interface gráfica (app.interface)...")
+        # O erro geralmente acontece AQUI se houver código solto no interface.py
+        from app.interface import MainWindow
+        print("[6] Interface importada. Iniciando Janela...")
+        
         window = MainWindow()
         window.show()
         
+        print("[7] Loop de eventos iniciado. Programa rodando.")
         sys.exit(app.exec())
         
     except Exception as e:
-        # Agora este alerta vai funcionar e mostrar o erro real!
-        err_msg = f"Erro ao iniciar o programa:\n{str(e)}"
-        print(err_msg) # Mostra no terminal
-        QMessageBox.critical(None, "Erro de Inicialização", err_msg) # Mostra na tela
         import traceback
-        traceback.print_exc()
+        erro_detalhado = traceback.format_exc()
+        print("\n!!! ERRO CRÍTICO NA EXECUÇÃO !!!")
+        print(erro_detalhado)
+        
+        # Tenta mostrar o erro numa janela (agora seguro pois 'app' existe globalmente)
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle("Erro de Execução")
+        msg.setText("Ocorreu um erro ao iniciar o programa.")
+        msg.setDetailedText(erro_detalhado)
+        msg.exec()
         sys.exit(1)
 
 if __name__ == "__main__":
-    launch_main_app()
+    main()
