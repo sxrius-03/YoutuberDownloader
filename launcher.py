@@ -9,44 +9,47 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(BASE_DIR, "app")
 ICON_PATH = os.path.join(BASE_DIR, "icon.ico")
 
-# Garante que o Windows use o ícone correto na barra de tarefas
+# Garante que o Windows use o ícone correto na barra de tarefas (Taskbar)
 try:
-    myappid = 'mycompany.myproduct.subproduct.version' # ID arbitrário
+    myappid = 'youtube.downloader.ultimate.v5'
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 except ImportError:
     pass
 
 def launch_main_app():
-    # Caminho para interface.py
-    interface_path = os.path.join(APP_DIR, "interface.py")
+    # 1. CRIA A APLICAÇÃO PRIMEIRO (Antes de qualquer lógica)
+    # Isso garante que QMessagebox funcione se der erro nos imports
+    app = QApplication(sys.argv)
     
+    # Define o ícone global imediatamente
+    if os.path.exists(ICON_PATH):
+        app.setWindowIcon(QIcon(ICON_PATH))
+
+    # Verifica se a pasta app existe
+    interface_path = os.path.join(APP_DIR, "interface.py")
     if not os.path.exists(interface_path):
-        # Se não existir interface (primeira vez ever), precisamos de um bootstrap mínimo
-        # mas como você disse que já tem os arquivos locais, vamos assumir que existe.
-        QMessageBox.critical(None, "Erro Fatal", "interface.py não encontrado.")
+        QMessageBox.critical(None, "Erro Fatal", f"O arquivo 'interface.py' não foi encontrado em:\n{interface_path}")
         sys.exit(1)
 
     try:
-        # Adiciona o diretório atual ao path
+        # 2. Configura o caminho para encontrar os módulos
         if BASE_DIR not in sys.path:
             sys.path.insert(0, BASE_DIR)
 
-        # Importa e inicia
+        # 3. Importa a Janela Principal (Aqui é onde o erro real costuma acontecer)
         from app.interface import MainWindow
         
-        # Inicia a aplicação Qt
-        app = QApplication(sys.argv)
-        
-        # Define o ícone global da aplicação (Barra de Tarefas)
-        if os.path.exists(ICON_PATH):
-            app.setWindowIcon(QIcon(ICON_PATH))
-
+        # 4. Inicia a Janela
         window = MainWindow()
         window.show()
+        
         sys.exit(app.exec())
         
     except Exception as e:
-        QMessageBox.critical(None, "Erro de Execução", f"Falha ao iniciar:\n{e}")
+        # Agora este alerta vai funcionar e mostrar o erro real!
+        err_msg = f"Erro ao iniciar o programa:\n{str(e)}"
+        print(err_msg) # Mostra no terminal
+        QMessageBox.critical(None, "Erro de Inicialização", err_msg) # Mostra na tela
         import traceback
         traceback.print_exc()
         sys.exit(1)
