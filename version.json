@@ -1,11 +1,4 @@
 {
-    "version": "1.1.1",
-    "release_date": "2026-02-13",
-    "changelog": "Correção de estrutura de pastas.",
-    "force_update": true,
-    "files": [
-        "utils.py",
-        "downloader.py",
-        "interface.py"
-    ]
+    "version": "2.0.0",
+    "exe_url": "https://github.com/sxrius-03/YoutuberDownloader/releases/download/v2.0.0/YouTube_Downloader.exe"
 }
