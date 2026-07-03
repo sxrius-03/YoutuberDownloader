@@ -1,0 +1,1 @@
+﻿# Adicione aqui as dependências do projeto (ex: pip freeze > requirements.txt)

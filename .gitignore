@@ -1,0 +1,26 @@
+﻿# --- Arquivos de Sistema e Compilação ---
+__pycache__/
+*.py[cod]
+*.class
+
+# --- Ambientes Virtuais ---
+venv/
+env/
+.venv/
+
+# --- Configurações e Logs ---
+.env
+*.log
+
+# --- Pastas do GSD / Antigravity ---
+.agent/
+scratch/
+graphify-out/
+.planning/
+.antigravitycli/
+
+# --- IDE e OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
