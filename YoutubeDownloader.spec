@@ -5,8 +5,20 @@ a = Analysis(
     ['launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('bin', 'bin'), ('data', 'data'), ('icon.ico', '.')],
-    hiddenimports=[],
+    datas=[
+        ('frontend/dist', 'frontend/dist'),
+        ('bin', 'bin'),
+        ('data', 'data'),
+        ('icon.ico', '.')
+    ],
+    hiddenimports=[
+        'fastapi',
+        'uvicorn',
+        'pydantic',
+        'python-multipart',
+        'requests',
+        'yt_dlp'
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

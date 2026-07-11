@@ -7,6 +7,19 @@ echo       YouTube Downloader - Compilação e Instalador
 echo ==========================================================
 echo.
 
+:: 0. Compilação do Frontend React/Vite
+echo [0/4] Compilando Frontend React/Vite...
+cd frontend
+call npm run build
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERRO] Ocorreu uma falha durante o build do frontend.
+    cd ..
+    exit /b %errorlevel%
+)
+cd ..
+echo.
+
 :: 1. Limpeza de compilações anteriores
 echo [1/4] Limpando compilações anteriores...
 if exist build rmdir /s /q build
@@ -16,7 +29,7 @@ echo.
 
 :: 2. Compilação com PyInstaller
 echo [2/4] Compilando aplicação com PyInstaller...
-pyinstaller --noconsole --onedir --name="YoutubeDownloader" --icon="icon.ico" --add-data "bin;bin" --add-data "data;data" --add-data "icon.ico;." launcher.py
+pyinstaller YoutubeDownloader.spec -y
 
 if %errorlevel% neq 0 (
     echo.
