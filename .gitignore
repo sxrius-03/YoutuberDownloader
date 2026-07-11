@@ -1,4 +1,4 @@
-﻿# --- Arquivos de Sistema e Compilação ---
+# --- Arquivos de Sistema e Compilação ---
 __pycache__/
 *.py[cod]
 *.class
@@ -24,3 +24,10 @@ graphify-out/
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- Compilações e Builds ---
+build/
+dist/
+node_modules/
+frontend/node_modules/
+frontend/dist/
