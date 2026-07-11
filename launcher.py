@@ -1,43 +1,47 @@
 import sys
 import os
-import ctypes
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtGui import QIcon
+import threading
+import socket
+import webbrowser
+import time
+import uvicorn
 
-# Como vamos compilar tudo em um EXE, podemos importar direto!
-from app.interface import MainWindow
+# Garante importações corretas independente do empacotamento
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from app.utils import PATHS
+from app.main import app
 
-ICON_PATH = os.path.join(PATHS["bundle"], "icon.ico")
-if not os.path.exists(ICON_PATH):
-    ICON_PATH = os.path.join(PATHS["root"], "icon.ico")
+def find_free_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(('', 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
-# --- CONFIGURAÇÃO DO WINDOWS (TASKBAR) ---
-try:
-    myappid = 'youtube.downloader.ultimate.v5'
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-except:
-    pass
+def run_server(port):
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 
 def main():
-    app = QApplication(sys.argv)
+    port = find_free_port()
     
-    # Define o ícone global (Barra de Tarefas)
-    if os.path.exists(ICON_PATH):
-        app.setWindowIcon(QIcon(ICON_PATH))
-
+    # Inicia o servidor uvicorn em background thread
+    t = threading.Thread(target=run_server, args=(port,), daemon=True)
+    t.start()
+    
+    # Aguarda o servidor inicializar brevemente
+    time.sleep(1.0)
+    
+    # Abre o navegador padrão na porta dinâmica
+    url = f"http://127.0.0.1:{port}"
+    print(f"Iniciando servidor local em: {url}")
+    webbrowser.open(url)
+    
+    # Mantém o processo do launcher ativo
     try:
-        # Abre a interface gráfica
-        window = MainWindow()
-        window.show()
-        sys.exit(app.exec())
-        
-    except Exception as e:
-        import traceback
-        err_msg = f"Erro fatal:\n{traceback.format_exc()}"
-        QMessageBox.critical(None, "Erro de Execução", err_msg)
-        sys.exit(1)
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Finalizando aplicação...")
 
 if __name__ == "__main__":
     main()
