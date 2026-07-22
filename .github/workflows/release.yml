@@ -1,0 +1,62 @@
+name: Release Youtube Downloader
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+          cd ..
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Executable with PyInstaller
+        run: |
+          pyinstaller "Youtube Downloader.spec" -y
+
+      - name: Compress Release Artifact
+        shell: powershell
+        run: |
+          $TAG_NAME = "${{ github.ref_name }}"
+          if (-not $TAG_NAME -or $TAG_NAME -eq "main" -or $TAG_NAME -eq "master") { $TAG_NAME = "latest" }
+          $ZIP_NAME = "Youtube-Downloader-$TAG_NAME-windows-x64.zip"
+          Compress-Archive -Path "dist/Youtube Downloader/*" -DestinationPath $ZIP_NAME
+          echo "RELEASE_ASSET_PATH=$ZIP_NAME" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.RELEASE_ASSET_PATH }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
