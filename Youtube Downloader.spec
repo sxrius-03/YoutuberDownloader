@@ -15,19 +15,14 @@ a = Analysis(
         'fastapi',
         'uvicorn',
         'pydantic',
-        'python-multipart',
+        'multipart',
         'requests',
-        'yt_dlp',
-        'PyQt6',
-        'PyQt6.QtCore',
-        'PyQt6.QtWidgets',
-        'PyQt6.QtWebEngineWidgets',
-        'PyQt6.QtWebEngineCore'
+        'yt_dlp'
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'tkinter'],
     noarchive=False,
     optimize=0,
 )

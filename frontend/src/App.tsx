@@ -10,7 +10,7 @@ export default function App() {
     <div>
       <header style={{ marginBottom: '2rem', textAlign: 'left' }}>
         <h1>Youtube Downloader</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Versão 2.0.1 (Interface Web)</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Versão 2.0.2 (Interface Web)</p>
       </header>
 
       <div className="tabs-header">

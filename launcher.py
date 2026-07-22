@@ -1,14 +1,11 @@
 import sys
 import os
-
-# Desabilita o sandbox do Chromium e outros problemas comuns do QWebEngine
-os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
-
 import threading
 import socket
 import webbrowser
 import time
 import json
+import subprocess
 import uvicorn
 
 # Garante importações corretas independente do empacotamento
@@ -28,9 +25,7 @@ def run_server(port):
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 
 def is_port_active(port):
-    # Tenta conectar via IPv4 e IPv6 no localhost
     for host in ('127.0.0.1', 'localhost'):
-        # Tenta IPv4
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(0.1)
@@ -39,72 +34,45 @@ def is_port_active(port):
             return True
         except Exception:
             pass
-        # Tenta IPv6
-        try:
-            s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-            s.settimeout(0.1)
-            s.connect((host, port))
-            s.close()
-            return True
-        except Exception:
-            pass
     return False
 
-def start_gui(url):
-    from PyQt6.QtCore import QUrl
-    from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
-    from PyQt6.QtWebEngineWidgets import QWebEngineView
-    from PyQt6.QtWebEngineCore import QWebEnginePage
-    from PyQt6.QtNetwork import QNetworkProxy
+def open_app_window(url):
+    """
+    Abre a interface Vite em modo aplicativo dedicado (sem barras de navegação/abas)
+    utilizando o Microsoft Edge ou Google Chrome nativo do sistema.
+    Caso nenhum esteja disponível, utiliza o navegador padrão via webbrowser.
+    """
+    edge_paths = [
+        os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+        os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+        os.path.expandvars(r"%LocalAppData%\Microsoft\Edge\Application\msedge.exe"),
+    ]
+    chrome_paths = [
+        os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+    ]
 
-    # Desativa qualquer proxy local (evita que localhost passe por proxies de VPN/Fiddler)
-    QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.ProxyType.NoProxy))
+    browser_exe = None
+    for p in edge_paths + chrome_paths:
+        if os.path.exists(p):
+            browser_exe = p
+            break
 
-    class CustomWebPage(QWebEnginePage):
-        def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-            print(f"[JS CONSOLE] Level {level}: {message} (Line {lineNumber} in {sourceID})")
+    if browser_exe:
+        try:
+            print(f"Abrindo interface Vite em janela dedicada: {browser_exe}")
+            subprocess.Popen([browser_exe, f"--app={url}"])
+            return
+        except Exception as e:
+            print(f"Erro ao abrir janela em modo app: {e}")
 
-    class WebViewerWindow(QMainWindow):
-        def __init__(self, url):
-            super().__init__()
-            self.setWindowTitle("Youtube Downloader")
-            self.resize(1100, 750)
-            
-            # Central widget
-            central_widget = QWidget()
-            self.setCentralWidget(central_widget)
-            layout = QVBoxLayout(central_widget)
-            layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Web view
-            self.web_view = QWebEngineView()
-            self.page = CustomWebPage(self.web_view)
-            self.web_view.setPage(self.page)
-            
-            # Connect load finished signal
-            self.web_view.loadFinished.connect(self.on_load_finished)
-            
-            print(f"WebViewer carregando URL: {url}")
-            self.web_view.setUrl(QUrl(url))
-            layout.addWidget(self.web_view)
-            
-        def on_load_finished(self, success):
-            if success:
-                print("WebViewer: Pagina carregada com sucesso!")
-            else:
-                print("WebViewer ERROR: Falha ao carregar a pagina!")
-
-    # Adiciona argumentos para desabilitar sandboxes e problemas gráficos do Chromium
-    args = sys.argv + ["--no-sandbox", "--disable-gpu", "--disable-software-rasterizer", "--ignore-gpu-blocklist"]
-    app = QApplication(args)
-    window = WebViewerWindow(url)
-    window.show()
-    sys.exit(app.exec())
+    print("Abrindo interface no navegador padrão...")
+    webbrowser.open(url)
 
 def main():
     port = find_free_port()
     
-    # Salva a porta no arquivo data/port.json para que o Vite dev server possa ler
     port_file = os.path.join(PATHS["data"], "port.json")
     try:
         os.makedirs(PATHS["data"], exist_ok=True)
@@ -113,17 +81,15 @@ def main():
     except Exception as e:
         print(f"Erro ao salvar arquivo de porta: {e}")
 
-    # Inicia o servidor uvicorn em background thread
+    # Inicia o servidor backend FastAPI em background
     t = threading.Thread(target=run_server, args=(port,), daemon=True)
     t.start()
     
-    # Aguarda o servidor inicializar brevemente
     time.sleep(1.0)
     
-    # URL padrão: backend local servindo static files
     url = f"http://127.0.0.1:{port}"
     
-    # Verifica se o Vite dev server está rodando (modo desenvolvimento)
+    # Verifica se o Vite dev server está rodando
     vite_port_file = os.path.join(PATHS["data"], "vite_port.json")
     if os.path.exists(vite_port_file):
         try:
@@ -132,26 +98,20 @@ def main():
                 vite_port = vite_data.get("port")
                 if vite_port and is_port_active(vite_port):
                     url = f"http://127.0.0.1:{vite_port}"
-                    print(f"Vite dev server detectado na porta {vite_port}. Direcionando WebViewer para o frontend de desenvolvimento.")
+                    print(f"Vite dev server detectado na porta {vite_port}.")
         except Exception as e:
             print(f"Erro ao testar porta do Vite: {e}")
 
-    print(f"Servidor backend rodando em: http://127.0.0.1:{port}")
-    print(f"Carregando interface em: {url}")
+    print(f"Backend FastAPI rodando em: http://127.0.0.1:{port}")
+    print(f"Interface Vite rodando em: {url}")
     
-    # Tenta rodar a interface com PyQt6 WebViewer
+    open_app_window(url)
+    
     try:
-        print("Iniciando interface desktop com PyQt6 WebViewer...")
-        start_gui(url)
-    except Exception as e:
-        print(f"Não foi possível iniciar o WebViewer ({e}). Abrindo no navegador padrão...")
-        webbrowser.open(url)
-        # Mantém o processo do launcher ativo caso falhe e use o navegador
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("Finalizando aplicação...")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Finalizando aplicação...")
 
 if __name__ == "__main__":
     main()
