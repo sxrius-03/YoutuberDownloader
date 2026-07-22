@@ -28,7 +28,7 @@ export default function SingleDownload() {
   const [eta, setEta] = useState('');
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/settings')
+    fetch('/api/settings')
       .then(res => res.json())
       .then(data => {
         setSettings(data);
@@ -42,7 +42,7 @@ export default function SingleDownload() {
     setLoading(true);
     setAnalysis(null);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/analyze', {
+      const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -67,14 +67,14 @@ export default function SingleDownload() {
     setStatusText('Iniciando...');
     
     // Salva o caminho atual nas configurações
-    await fetch('http://127.0.0.1:8000/api/settings/path', {
+    await fetch('/api/settings/path', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: savePath })
     });
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/download', {
+      const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,7 +90,7 @@ export default function SingleDownload() {
       const { task_id } = await res.json();
 
       // Conecta ao EventSource
-      const eventSource = new EventSource(`http://127.0.0.1:8000/api/download/progress/${task_id}`);
+      const eventSource = new EventSource(`/api/download/progress/${task_id}`);
       
       // Armazena no ref do objeto para fechar caso o componente desmonte
       eventSource.onmessage = (event) => {
@@ -135,6 +135,7 @@ export default function SingleDownload() {
           value={url} 
           onChange={(e) => setUrl(e.target.value)} 
           placeholder="Cole a URL do vídeo do YouTube aqui..." 
+          disabled={loading || downloading}
           style={{ flex: 1 }}
         />
         <button onClick={handleAnalyze} disabled={loading || downloading}>
@@ -152,6 +153,7 @@ export default function SingleDownload() {
               type="text" 
               value={filename} 
               onChange={(e) => setFilename(e.target.value)} 
+              disabled={downloading}
               style={{ width: '100%' }}
             />
           </div>
@@ -163,6 +165,7 @@ export default function SingleDownload() {
                 name="type" 
                 checked={downloadType === 'video'} 
                 onChange={() => setDownloadType('video')}
+                disabled={downloading}
               />
               Vídeo (MP4)
             </label>
@@ -172,13 +175,14 @@ export default function SingleDownload() {
                 name="type" 
                 checked={downloadType === 'audio'} 
                 onChange={() => setDownloadType('audio')}
+                disabled={downloading}
               />
               Áudio (MP3)
             </label>
 
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <span>Qualidade:</span>
-              <select value={selectedQuality} onChange={(e) => setSelectedQuality(e.target.value)}>
+              <select value={selectedQuality} onChange={(e) => setSelectedQuality(e.target.value)} disabled={downloading}>
                 {analysis.resolutions.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
@@ -191,9 +195,28 @@ export default function SingleDownload() {
                 type="text" 
                 value={savePath} 
                 onChange={(e) => setSavePath(e.target.value)} 
+                disabled={downloading}
                 style={{ flex: 1 }}
               />
-              <select onChange={(e) => setSavePath(e.target.value)} style={{ maxWidth: '200px' }} value={savePath}>
+              <button 
+                type="button" 
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/settings/choose-path', { method: 'POST' });
+                    if (!res.ok) throw new Error("Erro");
+                    const data = await res.json();
+                    if (data.path) setSavePath(data.path);
+                  } catch (e: any) {
+                    alert("Erro ao selecionar pasta: " + e.message);
+                  }
+                }} 
+                disabled={downloading}
+                style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '40px' }}
+                title="Escolher Pasta"
+              >
+                📁
+              </button>
+              <select onChange={(e) => setSavePath(e.target.value)} style={{ maxWidth: '200px' }} value={savePath} disabled={downloading}>
                 <option value="">Recentes...</option>
                 {settings.paths.map(p => <option key={p} value={p}>{p}</option>)}
               </select>

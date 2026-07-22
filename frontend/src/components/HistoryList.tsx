@@ -23,7 +23,7 @@ export default function HistoryList() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
 
   const fetchHistory = () => {
-    fetch('http://127.0.0.1:8000/api/history')
+    fetch('/api/history')
       .then(res => res.json())
       .then(data => setHistory(data))
       .catch(() => {});
@@ -35,7 +35,7 @@ export default function HistoryList() {
 
   const handleOpenFolder = async (path: string) => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/history/open', {
+      const res = await fetch('/api/history/open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path })

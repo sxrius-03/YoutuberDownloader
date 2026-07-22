@@ -21,7 +21,7 @@ export default function PlaylistDownload() {
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/settings')
+    fetch('/api/settings')
       .then(res => res.json())
       .then(data => {
         setSettings(data);
@@ -37,7 +37,7 @@ export default function PlaylistDownload() {
     setTitle('');
     setSelectedUrls(new Set());
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/analyze-playlist', {
+      const res = await fetch('/api/analyze-playlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
@@ -85,7 +85,7 @@ export default function PlaylistDownload() {
       addLog(`[${i + 1}/${total}] Iniciando download de: ${v.title}`);
       
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/download', {
+        const res = await fetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -102,7 +102,7 @@ export default function PlaylistDownload() {
 
         // Aguarda a conclusão via SSE de forma síncrona para fila sequencial
         await new Promise<void>((resolve) => {
-          const eventSource = new EventSource(`http://127.0.0.1:8000/api/download/progress/${task_id}`);
+          const eventSource = new EventSource(`/api/download/progress/${task_id}`);
           eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.status === 'ping') return;
@@ -142,6 +142,7 @@ export default function PlaylistDownload() {
           value={url} 
           onChange={(e) => setUrl(e.target.value)} 
           placeholder="Cole a URL da Playlist aqui..." 
+          disabled={loading || downloading}
           style={{ flex: 1 }}
         />
         <button onClick={handleAnalyze} disabled={loading || downloading}>
@@ -182,6 +183,24 @@ export default function PlaylistDownload() {
                 disabled={downloading}
                 style={{ flex: 1 }}
               />
+              <button 
+                type="button" 
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/settings/choose-path', { method: 'POST' });
+                    if (!res.ok) throw new Error("Erro");
+                    const data = await res.json();
+                    if (data.path) setSavePath(data.path);
+                  } catch (e: any) {
+                    alert("Erro ao selecionar pasta: " + e.message);
+                  }
+                }} 
+                disabled={downloading}
+                style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '40px' }}
+                title="Escolher Pasta"
+              >
+                📁
+              </button>
               <select onChange={(e) => setSavePath(e.target.value)} style={{ maxWidth: '200px' }} value={savePath} disabled={downloading}>
                 <option value="">Recentes...</option>
                 {settings.paths.map(p => <option key={p} value={p}>{p}</option>)}

@@ -17,7 +17,12 @@ a = Analysis(
         'pydantic',
         'python-multipart',
         'requests',
-        'yt_dlp'
+        'yt_dlp',
+        'PyQt6',
+        'PyQt6.QtCore',
+        'PyQt6.QtWidgets',
+        'PyQt6.QtWebEngineWidgets',
+        'PyQt6.QtWebEngineCore'
     ],
     hookspath=[],
     hooksconfig={},
@@ -33,7 +38,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='YoutubeDownloader',
+    name='Youtube Downloader',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -53,5 +58,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='YoutubeDownloader',
+    name='Youtube Downloader',
 )

@@ -14,7 +14,7 @@ from typing import Dict, Any
 from app.downloader import YouTubeEngine
 from app.utils import PATHS, SETTINGS_FILE, HISTORY_FILE, carregar_json, salvar_json, sanitizar_nome, formatar_tamanho
 
-app = FastAPI(title="YouTube Downloader API")
+app = FastAPI(title="Youtube Downloader API")
 
 # Habilita CORS para o servidor de desenvolvimento do Vite
 app.add_middleware(
@@ -211,6 +211,38 @@ def add_path(req: PathRequest):
         settings["paths"] = settings["paths"][:10] # Limita a 10 históricos
         salvar_json(SETTINGS_FILE, settings)
     return settings
+
+@app.post("/api/settings/choose-path")
+def choose_path():
+    import subprocess
+    import sys
+    
+    code = """
+import tkinter as tk
+from tkinter import filedialog
+import os
+root = tk.Tk()
+root.withdraw()
+root.attributes('-topmost', True)
+path = filedialog.askdirectory(title="Selecione a Pasta de Destino")
+root.destroy()
+if path:
+    print(os.path.abspath(path).replace("\\\\", "/"), end="")
+"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        path = result.stdout.strip()
+        if path:
+            return {"path": path}
+        return {"path": None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/history")
 def get_history():
