@@ -1,15 +1,42 @@
 import { useState, useEffect } from 'react';
+import { 
+  Clipboard, 
+  Search, 
+  Download, 
+  Video, 
+  Music, 
+  CheckCircle2, 
+  AlertCircle, 
+  Loader2, 
+  X,
+  Gauge,
+  Clock,
+  FileType
+} from 'lucide-react';
+import type { AnalysisResult, Settings } from '../api/bridge';
+import {
+  getSettings,
+  saveSettingPath,
+  analyzeVideo,
+  startDownload
+} from '../api/bridge';
+import FolderPicker from './FolderPicker';
 
-interface AnalysisResult {
-  title: string;
-  resolutions: string[];
-  opts: any;
-  strategy: string;
-}
+const VIDEO_CONTAINERS = [
+  { value: 'mp4', label: 'MP4 (Compatibilidade Universal)' },
+  { value: 'mkv', label: 'MKV (Matroska / Multifaixa)' },
+  { value: 'webm', label: 'WEBM (Otimizado Web)' },
+  { value: 'mov', label: 'MOV (Apple / QuickTime)' },
+  { value: 'avi', label: 'AVI (Legado Windows)' },
+];
 
-interface Settings {
-  paths: string[];
-}
+const AUDIO_CONTAINERS = [
+  { value: 'mp3', label: 'MP3 (Padrão / Universal)' },
+  { value: 'm4a', label: 'M4A (Apple AAC Alta Fidelidade)' },
+  { value: 'wav', label: 'WAV (Sem Perdas / PCM)' },
+  { value: 'flac', label: 'FLAC (Lossless Studio)' },
+  { value: 'opus', label: 'OPUS (Baixa Latência)' },
+];
 
 export default function SingleDownload() {
   const [url, setUrl] = useState('');
@@ -17,19 +44,22 @@ export default function SingleDownload() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedQuality, setSelectedQuality] = useState('');
   const [downloadType, setDownloadType] = useState<'video' | 'audio'>('video');
+  const [videoContainer, setVideoContainer] = useState('mp4');
+  const [audioContainer, setAudioContainer] = useState('mp3');
   const [filename, setFilename] = useState('');
   const [savePath, setSavePath] = useState('');
   const [settings, setSettings] = useState<Settings>({ paths: [] });
   
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [statusText, setStatusText] = useState('Aguardando...');
+  const [statusText, setStatusText] = useState('Insira a URL do vídeo para começar');
   const [speed, setSpeed] = useState('');
   const [eta, setEta] = useState('');
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
+    getSettings()
       .then(data => {
         setSettings(data);
         if (data.paths && data.paths.length > 0) setSavePath(data.paths[0]);
@@ -37,26 +67,45 @@ export default function SingleDownload() {
       .catch(() => {});
   }, []);
 
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim().startsWith('http')) {
+        setUrl(text.trim());
+      }
+    } catch {
+      // Ignore clipboard read permission failures
+    }
+  };
+
   const handleAnalyze = async () => {
     if (!url.trim()) return;
     setLoading(true);
     setAnalysis(null);
+    setIsSuccess(false);
+    setErrorMsg('');
+    setStatusText('Analisando informações e resoluções do vídeo...');
+
     try {
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
-      });
-      if (!res.ok) throw new Error("Erro na análise");
-      const data: AnalysisResult = await res.json();
+      const data = await analyzeVideo(url.trim());
       setAnalysis(data);
       setFilename(data.title);
-      if (data.resolutions.length > 0) setSelectedQuality(data.resolutions[0]);
-      setStatusText(`Pronto (Modo: ${data.strategy})`);
+      if (data.resolutions && data.resolutions.length > 0) {
+        setSelectedQuality(data.resolutions[0]);
+      }
+      setStatusText(`Vídeo identificado com sucesso (${data.strategy || 'Padrão'})`);
     } catch (e: any) {
-      alert("Falha ao analisar a URL: " + e.message);
+      const msg = e?.message || String(e);
+      setErrorMsg("Falha ao analisar a URL: " + msg);
+      setStatusText('Erro na análise da URL');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !loading && !downloading && url.trim()) {
+      handleAnalyze();
     }
   };
 
@@ -64,188 +113,311 @@ export default function SingleDownload() {
     if (!analysis) return;
     setDownloading(true);
     setProgress(0);
-    setStatusText('Iniciando...');
+    setSpeed('');
+    setEta('');
+    setIsSuccess(false);
+    setErrorMsg('');
+    setStatusText('Iniciando processo de download...');
     
     // Salva o caminho atual nas configurações
-    await fetch('/api/settings/path', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: savePath })
-    });
+    saveSettingPath(savePath).catch(() => {});
+
+    const chosenContainer = downloadType === 'audio' ? audioContainer : videoContainer;
 
     try {
-      const res = await fetch('/api/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
+      await startDownload(
+        {
+          url: url.trim(),
           path: savePath,
           filename,
-          type: downloadType,
+          downloadType,
           quality: selectedQuality,
+          container: chosenContainer,
           opts: analysis.opts
-        })
-      });
-      if (!res.ok) throw new Error("Erro ao iniciar download");
-      const { task_id } = await res.json();
-
-      // Conecta ao EventSource
-      const eventSource = new EventSource(`/api/download/progress/${task_id}`);
-      
-      // Armazena no ref do objeto para fechar caso o componente desmonte
-      eventSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.status === 'ping') return;
-        
-        if (data.status === 'downloading') {
-          setProgress(data.progress);
-          setSpeed(data.speed);
-          setEta(data.eta);
-          setStatusText(data.message);
-        } else if (data.status === 'processing') {
-          setProgress(100);
-          setStatusText(data.message);
-        } else if (data.status === 'finished') {
-          setProgress(100);
-          setStatusText(data.message);
-          setDownloading(false);
-          eventSource.close();
-        } else if (data.status === 'error') {
-          setStatusText(data.message);
-          setDownloading(false);
-          eventSource.close();
+        },
+        (payload) => {
+          if (payload.status === 'downloading') {
+            setProgress(payload.progress);
+            setSpeed(payload.speed || '');
+            setEta(payload.eta || '');
+            setStatusText(payload.message || 'Baixando stream...');
+          } else if (payload.status === 'processing') {
+            setProgress(100);
+            setStatusText(payload.message || 'Processando e convertendo arquivo...');
+          } else if (payload.status === 'finished') {
+            setProgress(100);
+            setStatusText('Download concluído com sucesso!');
+            setIsSuccess(true);
+            setDownloading(false);
+          } else if (payload.status === 'error') {
+            setErrorMsg(payload.message || 'Falha no download');
+            setStatusText('Erro ao baixar');
+            setDownloading(false);
+          }
         }
-      };
-      eventSource.onerror = () => {
-        setStatusText("Erro de conexão no stream");
-        setDownloading(false);
-        eventSource.close();
-      };
+      );
     } catch (e: any) {
-      setStatusText("Falha: " + e.message);
+      setErrorMsg("Falha de execução: " + (e?.message || String(e)));
+      setStatusText('Erro no download');
       setDownloading(false);
     }
   };
 
+  const activeFormatLabel = downloadType === 'video' 
+    ? videoContainer.toUpperCase() 
+    : audioContainer.toUpperCase();
+
   return (
-    <div className="card">
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+    <div className="surface-card">
+      {/* Search & URL Input Bar */}
+      <div className="search-pill-container">
         <input 
           type="text" 
           value={url} 
           onChange={(e) => setUrl(e.target.value)} 
-          placeholder="Cole a URL do vídeo do YouTube aqui..." 
+          onKeyDown={handleKeyDown}
+          placeholder="Cole ou digite a URL do YouTube (ex: https://youtube.com/watch?v=...)" 
           disabled={loading || downloading}
-          style={{ flex: 1 }}
+          className="search-input"
         />
-        <button onClick={handleAnalyze} disabled={loading || downloading}>
-          {loading ? 'Analisando...' : 'Analisar'}
+
+        {url && !loading && !downloading && (
+          <button 
+            type="button" 
+            className="btn-icon-action" 
+            onClick={() => setUrl('')}
+            title="Limpar campo"
+            style={{ padding: '0.35rem 0.5rem' }}
+          >
+            <X size={14} />
+          </button>
+        )}
+
+        <button 
+          type="button"
+          className="btn-icon-action" 
+          onClick={handlePasteClipboard} 
+          disabled={loading || downloading}
+          title="Colar da Área de Transferência"
+        >
+          <Clipboard size={14} />
+          <span>Colar</span>
+        </button>
+
+        <button 
+          type="button"
+          className="btn-primary" 
+          onClick={handleAnalyze} 
+          disabled={loading || downloading || !url.trim()}
+        >
+          {loading ? (
+            <>
+              <Loader2 size={16} className="spin-animation" style={{ animation: 'spin 1s linear infinite' }} />
+              <span>Analisando...</span>
+            </>
+          ) : (
+            <>
+              <Search size={16} />
+              <span>Analisar</span>
+            </>
+          )}
         </button>
       </div>
 
-      <div style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>{statusText}</div>
+      {/* Dynamic Status / Error banner */}
+      {errorMsg ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', padding: '0.75rem 1rem', backgroundColor: 'var(--error-bg)', color: 'var(--error)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 600 }}>
+          <AlertCircle size={16} style={{ flexShrink: 0 }} />
+          <span>{errorMsg}</span>
+        </div>
+      ) : isSuccess ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', padding: '0.75rem 1rem', backgroundColor: 'var(--success-bg)', color: 'var(--success)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 600 }}>
+          <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+          <span>Download finalizado com sucesso! O arquivo foi salvo na pasta destino.</span>
+        </div>
+      ) : (
+        <div style={{ color: 'var(--text-muted)', fontSize: '0.825rem', marginTop: '0.75rem', paddingLeft: '0.25rem' }}>
+          {statusText}
+        </div>
+      )}
 
+      {/* Analyzed Media Preview Details */}
       {analysis && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+        <div className="video-preview-grid">
+          {/* Left Column: Thumbnail */}
           <div>
-            <label style={{ display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>Nome do Arquivo:</label>
-            <input 
-              type="text" 
-              value={filename} 
-              onChange={(e) => setFilename(e.target.value)} 
-              disabled={downloading}
-              style={{ width: '100%' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <label style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-              <input 
-                type="radio" 
-                name="type" 
-                checked={downloadType === 'video'} 
-                onChange={() => setDownloadType('video')}
-                disabled={downloading}
-              />
-              Vídeo (MP4)
-            </label>
-            <label style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-              <input 
-                type="radio" 
-                name="type" 
-                checked={downloadType === 'audio'} 
-                onChange={() => setDownloadType('audio')}
-                disabled={downloading}
-              />
-              Áudio (MP3)
-            </label>
-
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <span>Qualidade:</span>
-              <select value={selectedQuality} onChange={(e) => setSelectedQuality(e.target.value)} disabled={downloading}>
-                {analysis.resolutions.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
+            <div className="thumbnail-container">
+              {analysis.thumbnail ? (
+                <img 
+                  src={analysis.thumbnail} 
+                  alt={analysis.title} 
+                  className="thumbnail-img"
+                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                />
+              ) : (
+                <Video size={48} color="var(--text-muted)" />
+              )}
+              {analysis.duration && (
+                <span className="duration-pill">{analysis.duration}</span>
+              )}
             </div>
+            {analysis.uploader && (
+              <div style={{ marginTop: '0.65rem', fontSize: '0.825rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Canal: <span style={{ color: 'var(--text-primary)' }}>{analysis.uploader}</span>
+              </div>
+            )}
           </div>
 
+          {/* Right Column: Settings & Download Trigger */}
           <div>
-            <label style={{ display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>Salvar em:</label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {/* Title / Filename */}
+            <div className="meta-field">
+              <label className="meta-label">Título do Arquivo</label>
               <input 
                 type="text" 
-                value={savePath} 
-                onChange={(e) => setSavePath(e.target.value)} 
+                value={filename} 
+                onChange={(e) => setFilename(e.target.value)} 
                 disabled={downloading}
-                style={{ flex: 1 }}
+                className="meta-input"
               />
-              <button 
-                type="button" 
-                onClick={async () => {
-                  try {
-                    const res = await fetch('/api/settings/choose-path', { method: 'POST' });
-                    if (!res.ok) throw new Error("Erro");
-                    const data = await res.json();
-                    if (data.path) setSavePath(data.path);
-                  } catch (e: any) {
-                    alert("Erro ao selecionar pasta: " + e.message);
-                  }
-                }} 
-                disabled={downloading}
-                style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '40px' }}
-                title="Escolher Pasta"
-              >
-                📁
-              </button>
-              <select onChange={(e) => setSavePath(e.target.value)} style={{ maxWidth: '200px' }} value={savePath} disabled={downloading}>
-                <option value="">Recentes...</option>
-                {settings.paths.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
             </div>
+
+            {/* Media Type & Quality/Container Controls */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.85rem', alignItems: 'end', marginBottom: '1.1rem' }}>
+              {/* Type Switcher */}
+              <div className="meta-field" style={{ margin: 0 }}>
+                <label className="meta-label">Tipo de Mídia</label>
+                <div className="segmented-control">
+                  <button 
+                    type="button" 
+                    className={`segmented-btn ${downloadType === 'video' ? 'active' : ''}`}
+                    onClick={() => setDownloadType('video')}
+                    disabled={downloading}
+                  >
+                    <Video size={14} />
+                    <span>Vídeo</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    className={`segmented-btn ${downloadType === 'audio' ? 'active' : ''}`}
+                    onClick={() => setDownloadType('audio')}
+                    disabled={downloading}
+                  >
+                    <Music size={14} />
+                    <span>Áudio</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Resolution Picker (only for video) */}
+              {downloadType === 'video' && analysis.resolutions && analysis.resolutions.length > 0 && (
+                <div className="meta-field" style={{ margin: 0 }}>
+                  <label className="meta-label">Resolução</label>
+                  <select 
+                    value={selectedQuality} 
+                    onChange={(e) => setSelectedQuality(e.target.value)} 
+                    disabled={downloading}
+                    className="custom-select"
+                  >
+                    {analysis.resolutions.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Container / Format Selector */}
+              <div className="meta-field" style={{ margin: 0 }}>
+                <label className="meta-label">
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <FileType size={12} />
+                    <span>Formato de Saída</span>
+                  </span>
+                </label>
+                {downloadType === 'video' ? (
+                  <select 
+                    value={videoContainer} 
+                    onChange={(e) => setVideoContainer(e.target.value)} 
+                    disabled={downloading}
+                    className="custom-select"
+                  >
+                    {VIDEO_CONTAINERS.map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <select 
+                    value={audioContainer} 
+                    onChange={(e) => setAudioContainer(e.target.value)} 
+                    disabled={downloading}
+                    className="custom-select"
+                  >
+                    {AUDIO_CONTAINERS.map(c => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Destination Folder */}
+            <FolderPicker 
+              value={savePath} 
+              onChange={setSavePath} 
+              recentPaths={settings.paths} 
+              disabled={downloading} 
+            />
+
+            {/* Real-time Download HUD */}
+            {downloading && (
+              <div className="hud-container">
+                <div className="hud-header">
+                  <div className="hud-title">
+                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                    <span>Progresso do Download</span>
+                  </div>
+                  <span className="hud-percent">{Math.round(progress)}%</span>
+                </div>
+
+                <div className="hud-progress-track">
+                  <div className="hud-progress-fill" style={{ width: `${progress}%` }}></div>
+                </div>
+
+                <div className="hud-metrics-row">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Gauge size={13} color="var(--text-muted)" />
+                    <span>{speed || 'Calculando velocidade...'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Clock size={13} color="var(--text-muted)" />
+                    <span>ETA: {eta || '--:--'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Primary Download Action Button */}
+            <button 
+              type="button"
+              onClick={handleDownload} 
+              disabled={downloading} 
+              className="btn-primary"
+              style={{ width: '100%', marginTop: '1.25rem', height: '46px', fontSize: '1rem', justifyContent: 'center' }}
+            >
+              {downloading ? (
+                <>
+                  <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                  <span>Baixando {downloadType === 'video' ? 'Vídeo' : 'Áudio'} ({activeFormatLabel})...</span>
+                </>
+              ) : (
+                <>
+                  <Download size={18} />
+                  <span>Baixar {downloadType === 'video' ? 'Vídeo' : 'Áudio'} ({activeFormatLabel})</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
-      )}
-
-      {downloading && (
-        <div style={{ marginTop: '1.5rem' }}>
-          <div className="progress-container">
-            <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
-            <span className="progress-text">{Math.round(progress)}%</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            <span>Velocidade: {speed}</span>
-            <span>ETA: {eta}</span>
-          </div>
-        </div>
-      )}
-
-      {analysis && (
-        <button 
-          onClick={handleDownload} 
-          disabled={downloading} 
-          style={{ width: '100%', marginTop: '1.5rem', backgroundColor: 'var(--success)', height: '50px' }}
-        >
-          {downloading ? 'Baixando...' : 'BAIXAR'}
-        </button>
       )}
     </div>
   );

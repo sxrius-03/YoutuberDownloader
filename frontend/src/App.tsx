@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Film, ListMusic, History, Download } from 'lucide-react';
 import SingleDownload from './components/SingleDownload';
 import PlaylistDownload from './components/PlaylistDownload';
 import HistoryList from './components/HistoryList';
@@ -8,33 +9,52 @@ export default function App() {
 
   return (
     <div>
-      <header style={{ marginBottom: '2rem', textAlign: 'left' }}>
-        <h1>Youtube Downloader</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Versão 2.0.2 (Interface Web)</p>
+      <header className="app-header">
+        <div className="brand-container">
+          <div className="brand-badge">
+            <Download size={20} strokeWidth={2.5} />
+          </div>
+          <div>
+            <div className="brand-title">
+              <span>Youtube Downloader</span>
+            </div>
+            <div className="brand-subtitle">Desktop Native v2.0.2</div>
+          </div>
+        </div>
+
+        <div className="system-status-pill">
+          <div className="status-dot"></div>
+          <span>Pronto</span>
+        </div>
       </header>
 
-      <div className="tabs-header">
-        <button 
+      <nav className="tabs-nav">
+        <button
           className={`tab-btn ${activeTab === 'single' ? 'active' : ''}`}
           onClick={() => setActiveTab('single')}
         >
-          Download Único
+          <Film size={16} />
+          <span>Download Único</span>
         </button>
-        <button 
+
+        <button
           className={`tab-btn ${activeTab === 'playlist' ? 'active' : ''}`}
           onClick={() => setActiveTab('playlist')}
         >
-          Playlist
+          <ListMusic size={16} />
+          <span>Playlist</span>
         </button>
-        <button 
+
+        <button
           className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
         >
-          Histórico
+          <History size={16} />
+          <span>Histórico</span>
         </button>
-      </div>
+      </nav>
 
-      <main style={{ marginTop: '1rem' }}>
+      <main>
         {activeTab === 'single' && <SingleDownload />}
         {activeTab === 'playlist' && <PlaylistDownload />}
         {activeTab === 'history' && <HistoryList />}

@@ -3,8 +3,19 @@
   "version": "2.0.2",
   "private": true,
   "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri",
     "frontend:install": "cd frontend && npm install",
     "frontend:dev": "cd frontend && npm run dev",
-    "frontend:build": "cd frontend && npm run build"
+    "frontend:build": "cd frontend && npm run build",
+    "test:e2e": "npm run frontend:build && playwright test",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "version:bump": "powershell -ExecutionPolicy Bypass -File ./bump-version.ps1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tauri-apps/cli": "^2.11.4"
   }
 }

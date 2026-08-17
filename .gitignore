@@ -8,13 +8,17 @@ venv/
 env/
 .venv/
 
-# --- Configurações e Logs ---
+# --- Configurações, Histórico e Dados Locais do Usuário ---
 .env
 *.log
+history*.json
+settings*.json
+data/
+scratch/
+e2e-screenshots/
 
 # --- Pastas do GSD / Antigravity ---
 .agent/
-scratch/
 graphify-out/
 .planning/
 .antigravitycli/
@@ -31,6 +35,6 @@ dist/
 node_modules/
 frontend/node_modules/
 frontend/dist/
-
-*.md
-data/
+playwright-report/
+test-results/
+src-tauri/target/
