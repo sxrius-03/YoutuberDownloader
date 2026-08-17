@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Film, ListMusic, History, Download } from 'lucide-react';
 import SingleDownload from './components/SingleDownload';
 import PlaylistDownload from './components/PlaylistDownload';
