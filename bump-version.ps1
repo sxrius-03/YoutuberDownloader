@@ -17,6 +17,10 @@ Write-Host "Bumping version across all project files to v$Version..." -Foregroun
 
 $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
+function Read-Utf8($path) {
+    [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+}
+
 function Write-Utf8NoBom($path, $content) {
     [System.IO.File]::WriteAllText($path, $content, $Utf8NoBom)
 }
@@ -24,7 +28,7 @@ function Write-Utf8NoBom($path, $content) {
 # 1. Update root package.json
 $RootPkgPath = Join-Path $PSScriptRoot "package.json"
 if (Test-Path $RootPkgPath) {
-    $RootPkg = Get-Content $RootPkgPath -Raw | ConvertFrom-Json
+    $RootPkg = Read-Utf8 $RootPkgPath | ConvertFrom-Json
     $RootPkg.version = $Version
     $json = $RootPkg | ConvertTo-Json -Depth 10
     Write-Utf8NoBom $RootPkgPath $json
@@ -34,7 +38,7 @@ if (Test-Path $RootPkgPath) {
 # 2. Update frontend package.json
 $FrontendPkgPath = Join-Path $PSScriptRoot "frontend\package.json"
 if (Test-Path $FrontendPkgPath) {
-    $FrontendPkg = Get-Content $FrontendPkgPath -Raw | ConvertFrom-Json
+    $FrontendPkg = Read-Utf8 $FrontendPkgPath | ConvertFrom-Json
     $FrontendPkg.version = $Version
     $json = $FrontendPkg | ConvertTo-Json -Depth 10
     Write-Utf8NoBom $FrontendPkgPath $json
@@ -44,7 +48,7 @@ if (Test-Path $FrontendPkgPath) {
 # 3. Update src-tauri/tauri.conf.json
 $TauriConfPath = Join-Path $PSScriptRoot "src-tauri\tauri.conf.json"
 if (Test-Path $TauriConfPath) {
-    $TauriConf = Get-Content $TauriConfPath -Raw | ConvertFrom-Json
+    $TauriConf = Read-Utf8 $TauriConfPath | ConvertFrom-Json
     $TauriConf.version = $Version
     $json = $TauriConf | ConvertTo-Json -Depth 15
     Write-Utf8NoBom $TauriConfPath $json
@@ -54,7 +58,7 @@ if (Test-Path $TauriConfPath) {
 # 4. Update src-tauri/Cargo.toml
 $CargoTomlPath = Join-Path $PSScriptRoot "src-tauri\Cargo.toml"
 if (Test-Path $CargoTomlPath) {
-    $CargoContent = Get-Content $CargoTomlPath -Raw
+    $CargoContent = Read-Utf8 $CargoTomlPath
     $CargoUpdated = $CargoContent -replace '(?m)^version\s*=\s*"[^"]+"', "version = `"$Version`""
     Write-Utf8NoBom $CargoTomlPath $CargoUpdated
     Write-Host "  -> Updated src-tauri/Cargo.toml" -ForegroundColor Green
@@ -63,7 +67,7 @@ if (Test-Path $CargoTomlPath) {
 # 5. Update frontend App.tsx version badge if present
 $AppTsxPath = Join-Path $PSScriptRoot "frontend\src\App.tsx"
 if (Test-Path $AppTsxPath) {
-    $AppContent = Get-Content $AppTsxPath -Raw
+    $AppContent = Read-Utf8 $AppTsxPath
     $AppUpdated = $AppContent -replace 'v\d+\.\d+\.\d+', "v$Version"
     Write-Utf8NoBom $AppTsxPath $AppUpdated
     Write-Host "  -> Updated frontend/src/App.tsx version string" -ForegroundColor Green
