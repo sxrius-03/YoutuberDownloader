@@ -18,7 +18,7 @@ export default function App() {
             <div className="brand-title">
               <span>Youtube Downloader</span>
             </div>
-            <div className="brand-subtitle">Desktop Native v2.0.3</div>
+            <div className="brand-subtitle">Desktop Native v2.0.4</div>
           </div>
         </div>
 
@@ -34,7 +34,7 @@ export default function App() {
           onClick={() => setActiveTab('single')}
         >
           <Film size={16} />
-          <span>Download Único</span>
+          <span>Download Ãšnico</span>
         </button>
 
         <button
@@ -50,7 +50,7 @@ export default function App() {
           onClick={() => setActiveTab('history')}
         >
           <History size={16} />
-          <span>Histórico</span>
+          <span>HistÃ³rico</span>
         </button>
       </nav>
 
