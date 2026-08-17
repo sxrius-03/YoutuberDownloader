@@ -1,6 +1,6 @@
 [package]
 name = "youtube-downloader"
-version = "2.0.4"
+version = "2.0.5"
 description = "Youtube Downloader Native WebViewer App"
 authors = ["Siriux"]
 edition = "2021"
