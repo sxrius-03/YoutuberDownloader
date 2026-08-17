@@ -23,9 +23,9 @@ npm run build
 npm run test:e2e
 
 # Incremento e Controle de Versão (Atualiza package.json, Cargo.toml, tauri.conf.json, commita e tagueia)
-.\bump-version.ps1 2.0.3
+.\bump-version.ps1 2.0.4
 # ou:
-npm run version:bump 2.0.3
+npm run version:bump 2.0.4
 ```
 
 ---
