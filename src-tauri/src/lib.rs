@@ -536,6 +536,8 @@ async fn open_folder(path: String) -> Result<(), String> {
     }
 }
 
+pub mod updater;
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -549,7 +551,9 @@ pub fn run() {
             save_setting_path,
             choose_folder,
             get_history,
-            open_folder
+            open_folder,
+            updater::check_for_updates,
+            updater::install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

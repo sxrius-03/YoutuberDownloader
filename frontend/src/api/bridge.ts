@@ -233,3 +233,24 @@ export async function startDownload(
     eventSource.close();
   };
 }
+
+export interface UpdateInfo {
+  current_version: string;
+  latest_version: string;
+  release_notes: string;
+  download_url: string;
+}
+
+export async function checkForUpdates(): Promise<UpdateInfo | null> {
+  if (isTauri()) {
+    return invoke<UpdateInfo | null>('check_for_updates');
+  }
+  return null;
+}
+
+export async function installUpdate(downloadUrl: string): Promise<void> {
+  if (isTauri()) {
+    return invoke('install_update', { downloadUrl });
+  }
+}
+

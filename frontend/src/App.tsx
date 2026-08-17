@@ -3,6 +3,7 @@ import { Film, ListMusic, History, Download } from 'lucide-react';
 import SingleDownload from './components/SingleDownload';
 import PlaylistDownload from './components/PlaylistDownload';
 import HistoryList from './components/HistoryList';
+import UpdateChecker from './components/UpdateChecker';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'single' | 'playlist' | 'history'>('single');
@@ -34,7 +35,7 @@ export default function App() {
           onClick={() => setActiveTab('single')}
         >
           <Film size={16} />
-          <span>Download Ãšnico</span>
+          <span>Download Único</span>
         </button>
 
         <button
@@ -50,7 +51,7 @@ export default function App() {
           onClick={() => setActiveTab('history')}
         >
           <History size={16} />
-          <span>HistÃ³rico</span>
+          <span>Histórico</span>
         </button>
       </nav>
 
@@ -59,6 +60,8 @@ export default function App() {
         {activeTab === 'playlist' && <PlaylistDownload />}
         {activeTab === 'history' && <HistoryList />}
       </main>
+
+      <UpdateChecker />
     </div>
   );
 }
