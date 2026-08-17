@@ -5,6 +5,19 @@ use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
 use tauri::{AppHandle, Emitter};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn create_hidden_command<P: AsRef<std::ffi::OsStr>>(program: P) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AnalysisResult {
     pub title: String,
@@ -105,7 +118,7 @@ async fn analyze_video(app: AppHandle, url: String) -> Result<AnalysisResult, St
     let qjs = get_bin_path(&app, "qjs.exe");
     println!("[analyze_video] Using yt-dlp binary at: {:?}", yt_dlp);
 
-    let mut cmd = Command::new(&yt_dlp);
+    let mut cmd = create_hidden_command(&yt_dlp);
     cmd.args(&["--dump-json", "--no-playlist"]);
     cmd.arg("--remote-components").arg("ejs:github");
     cmd.arg("--js-runtimes").arg("node");
@@ -172,7 +185,7 @@ async fn analyze_playlist(app: AppHandle, url: String) -> Result<PlaylistResult,
     let qjs = get_bin_path(&app, "qjs.exe");
     println!("[analyze_playlist] Using yt-dlp binary at: {:?}", yt_dlp);
 
-    let mut cmd = Command::new(&yt_dlp);
+    let mut cmd = create_hidden_command(&yt_dlp);
     cmd.args(&["--flat-playlist", "--dump-json"]);
     cmd.arg("--remote-components").arg("ejs:github");
     cmd.arg("--js-runtimes").arg("node");
@@ -252,7 +265,7 @@ async fn start_download(
     let safe_filename = if safe_filename.is_empty() { "video".to_string() } else { safe_filename };
 
     tokio::task::spawn_blocking(move || {
-        let mut cmd = Command::new(&yt_dlp);
+        let mut cmd = create_hidden_command(&yt_dlp);
         cmd.arg("--newline");
         cmd.arg("--no-mtime");
         cmd.arg("--windows-filenames");
@@ -513,7 +526,7 @@ async fn get_history(app: AppHandle) -> Result<Vec<HistoryItem>, String> {
 #[tauri::command]
 async fn open_folder(path: String) -> Result<(), String> {
     if Path::new(&path).exists() {
-        Command::new("explorer")
+        create_hidden_command("explorer")
             .arg(&path)
             .spawn()
             .map_err(|e| e.to_string())?;

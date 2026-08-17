@@ -34,7 +34,7 @@ export default function App() {
           onClick={() => setActiveTab('single')}
         >
           <Film size={16} />
-          <span>Download Ãšnico</span>
+          <span>Download Único</span>
         </button>
 
         <button
@@ -50,7 +50,7 @@ export default function App() {
           onClick={() => setActiveTab('history')}
         >
           <History size={16} />
-          <span>HistÃ³rico</span>
+          <span>Histórico</span>
         </button>
       </nav>
 
