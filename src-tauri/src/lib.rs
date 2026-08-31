@@ -85,30 +85,40 @@ fn get_app_dir(app: &AppHandle) -> PathBuf {
 fn get_bin_path(app: &AppHandle, binary_name: &str) -> PathBuf {
     use tauri::Manager;
 
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
     // 1. Tauri resource directory (bundled package)
     if let Ok(res_dir) = app.path().resource_dir() {
-        let p1 = res_dir.join("bin").join(binary_name);
-        if p1.exists() { return p1; }
-        let p2 = res_dir.join(binary_name);
-        if p2.exists() { return p2; }
+        candidates.push(res_dir.join("bin").join(binary_name));
+        candidates.push(res_dir.join(binary_name));
+        candidates.push(res_dir.join("resources").join("bin").join(binary_name));
+        candidates.push(res_dir.join("resources").join(binary_name));
+        candidates.push(res_dir.join("_up_").join("bin").join(binary_name));
     }
 
     // 2. Next to executable
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            let p1 = exe_dir.join("bin").join(binary_name);
-            if p1.exists() { return p1; }
-            let p2 = exe_dir.join(binary_name);
-            if p2.exists() { return p2; }
+            candidates.push(exe_dir.join("bin").join(binary_name));
+            candidates.push(exe_dir.join(binary_name));
+            candidates.push(exe_dir.join("resources").join("bin").join(binary_name));
+            candidates.push(exe_dir.join("resources").join(binary_name));
+            candidates.push(exe_dir.join("_up_").join("bin").join(binary_name));
         }
     }
 
     // 3. Workspace / local dev directory
-    let cwd_p1 = PathBuf::from("bin").join(binary_name);
-    if cwd_p1.exists() { return cwd_p1.canonicalize().unwrap_or(cwd_p1); }
-    let cwd_p2 = PathBuf::from("../bin").join(binary_name);
-    if cwd_p2.exists() { return cwd_p2.canonicalize().unwrap_or(cwd_p2); }
+    candidates.push(PathBuf::from("bin").join(binary_name));
+    candidates.push(PathBuf::from("../bin").join(binary_name));
+    candidates.push(PathBuf::from("src-tauri/bin").join(binary_name));
 
+    for p in candidates {
+        if p.exists() {
+            return p.canonicalize().unwrap_or(p);
+        }
+    }
+
+    // 4. Fallback to binary name in PATH
     PathBuf::from(binary_name)
 }
 

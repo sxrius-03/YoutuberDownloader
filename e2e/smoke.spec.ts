@@ -23,7 +23,7 @@ test.describe('Youtube Downloader Desktop App - Smoke & Visual', () => {
 
     // Check title and brand
     await expect(page.locator('.brand-title')).toContainText('Youtube Downloader');
-    await expect(page.locator('.brand-subtitle')).toContainText('Desktop Native v2.0.2');
+    await expect(page.locator('.brand-subtitle')).toHaveText(/Desktop Native v\d+\.\d+\.\d+/);
 
     // Check tabs are present
     const singleTab = page.locator('button.tab-btn:has-text("Download Único")');

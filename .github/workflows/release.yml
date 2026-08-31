@@ -33,6 +33,28 @@ jobs:
           npm --prefix frontend install
         shell: pwsh
 
+      - name: Ensure standalone binaries (yt-dlp, ffmpeg, ffprobe, qjs)
+        run: |
+          if (!(Test-Path "bin")) {
+            New-Item -ItemType Directory -Path "bin" -Force
+          }
+          Write-Host "Fetching latest standalone yt-dlp.exe..."
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "bin/yt-dlp.exe"
+          
+          $required = @("bin/yt-dlp.exe", "bin/ffmpeg.exe", "bin/ffprobe.exe", "bin/qjs.exe")
+          foreach ($b in $required) {
+            if (!(Test-Path $b)) {
+              throw "Required binary missing: $b"
+            }
+            $item = Get-Item $b
+            Write-Host "Verified $b ($($item.Length) bytes)"
+            if ($b -eq "bin/yt-dlp.exe" -and $item.Length -lt 5000000) {
+              throw "yt-dlp.exe is too small ($($item.Length) bytes). Must be standalone PyInstaller binary."
+            }
+          }
+          & "bin/yt-dlp.exe" --version
+        shell: pwsh
+
       - name: Build Frontend & Compile Tauri Release
         run: npx tauri build
         shell: pwsh
