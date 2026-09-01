@@ -135,7 +135,6 @@ async fn analyze_video(app: AppHandle, url: String) -> Result<AnalysisResult, St
     if qjs.exists() {
         cmd.arg("--js-runtimes").arg(format!("quickjs:{}", qjs.to_string_lossy()));
     }
-    cmd.arg("--extractor-args").arg("youtube:player_client=android_vr,web,mweb,ios");
     cmd.arg("--socket-timeout").arg("30");
     cmd.arg("--retries").arg("10");
     cmd.arg(&url);
@@ -164,10 +163,17 @@ async fn analyze_video(app: AppHandle, url: String) -> Result<AnalysisResult, St
     let mut resolutions = Vec::new();
     if let Some(formats) = val.get("formats").and_then(|v| v.as_array()) {
         for f in formats {
+            let vcodec = f.get("vcodec").and_then(|v| v.as_str()).unwrap_or("none");
+            let ext = f.get("ext").and_then(|v| v.as_str()).unwrap_or("");
+            if vcodec == "none" || ext == "mhtml" {
+                continue;
+            }
             if let Some(height) = f.get("height").and_then(|v| v.as_i64()) {
-                let h_str = height.to_string();
-                if !resolutions.contains(&h_str) {
-                    resolutions.push(h_str);
+                if height >= 144 {
+                    let h_str = height.to_string();
+                    if !resolutions.contains(&h_str) {
+                        resolutions.push(h_str);
+                    }
                 }
             }
         }
@@ -202,7 +208,6 @@ async fn analyze_playlist(app: AppHandle, url: String) -> Result<PlaylistResult,
     if qjs.exists() {
         cmd.arg("--js-runtimes").arg(format!("quickjs:{}", qjs.to_string_lossy()));
     }
-    cmd.arg("--extractor-args").arg("youtube:player_client=android_vr,web,mweb,ios");
     cmd.arg("--socket-timeout").arg("30");
     cmd.arg("--retries").arg("10");
     cmd.arg(&url);
@@ -290,7 +295,6 @@ async fn start_download(
             cmd.arg("--ffmpeg-location").arg(&ffmpeg_dir);
         }
 
-        cmd.arg("--extractor-args").arg("youtube:player_client=android_vr,web,mweb,ios");
         cmd.arg("--socket-timeout").arg("30");
         cmd.arg("--retries").arg("10");
         cmd.arg("--fragment-retries").arg("10");

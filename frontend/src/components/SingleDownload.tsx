@@ -38,6 +38,21 @@ const AUDIO_CONTAINERS = [
   { value: 'opus', label: 'OPUS (Baixa Latência)' },
 ];
 
+const formatResolutionLabel = (res: string): string => {
+  const digits = res.replace(/[^\d]/g, '');
+  const num = parseInt(digits, 10);
+  if (isNaN(num)) {
+    return res === 'Melhor' ? 'Melhor Resolução (Auto)' : res;
+  }
+  if (num >= 4320) return `${num}p (8K Ultra HD)`;
+  if (num >= 2160) return `${num}p (4K Ultra HD)`;
+  if (num >= 1440) return `${num}p (2K Quad HD)`;
+  if (num >= 1080) return `${num}p (Full HD)`;
+  if (num >= 720) return `${num}p (HD)`;
+  if (num >= 480) return `${num}p (SD)`;
+  return `${num}p`;
+};
+
 export default function SingleDownload() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -320,7 +335,9 @@ export default function SingleDownload() {
                     className="custom-select"
                   >
                     {analysis.resolutions.map(r => (
-                      <option key={r} value={r}>{r}</option>
+                      <option key={r} value={r}>
+                        {formatResolutionLabel(r)}
+                      </option>
                     ))}
                   </select>
                 </div>
