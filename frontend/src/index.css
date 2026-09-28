@@ -303,7 +303,7 @@ button.tab-btn.active {
 /* Video Details Preview Grid */
 .video-preview-grid {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 1.5rem;
   margin-top: 1.5rem;
   padding-top: 1.5rem;
@@ -312,7 +312,7 @@ button.tab-btn.active {
 
 @media (max-width: 768px) {
   .video-preview-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

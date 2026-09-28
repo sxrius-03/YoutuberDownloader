@@ -62,6 +62,37 @@ test.describe('Youtube Downloader - Functional Flows', () => {
     await page.screenshot({ path: 'e2e-screenshots/04-analyzed-video-ui.png', fullPage: true });
   });
 
+  test('Long destination paths stay inside the video card after analysis', async ({ page }) => {
+    const destination = `C:\\Downloads\\${Array(8).fill('long-destination-folder').join('\\')}`;
+    await page.route('**/api/settings', (route) => route.fulfill({ json: { paths: [destination] } }));
+    await page.route('**/api/analyze', (route) => route.fulfill({
+      json: { title: 'Video', resolutions: ['1080'], opts: {} }
+    }));
+
+    await page.goto('/');
+    await page.locator('input.search-input').fill('https://www.youtube.com/watch?v=example');
+    await page.locator('.btn-primary:has-text("Analisar")').click();
+    await expect(page.locator('.folder-path-text')).toHaveText(destination);
+
+    for (const width of [850, 700]) {
+      await page.setViewportSize({ width, height: 950 });
+      const layout = await page.locator('.video-preview-grid').evaluate((grid) => {
+        const card = grid.closest('.surface-card')!;
+        const path = grid.querySelector('.folder-path-text')!;
+        return {
+          gridWidth: grid.clientWidth,
+          gridScrollWidth: grid.scrollWidth,
+          cardRight: card.getBoundingClientRect().right,
+          pathRight: path.getBoundingClientRect().right,
+        };
+      });
+
+      expect(layout.gridScrollWidth).toBeLessThanOrEqual(layout.gridWidth);
+      expect(layout.pathRight).toBeLessThanOrEqual(layout.cardRight);
+      await page.screenshot({ path: `e2e-screenshots/07-long-destination-path-${width}.png`, fullPage: true });
+    }
+  });
+
   test('Playlist Download: Analysis renders item list, format options and batch selection controls', async ({ page }) => {
     await page.route('**/api/analyze-playlist', async (route) => {
       await route.fulfill({
