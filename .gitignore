@@ -38,3 +38,5 @@ frontend/dist/
 playwright-report/
 test-results/
 src-tauri/target/
+# --- Workspace de execucao do Subagent-Driven Development ---
+.superpowers/
