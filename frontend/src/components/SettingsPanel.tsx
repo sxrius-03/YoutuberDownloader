@@ -17,7 +17,8 @@ export const SettingsPanel: React.FC = () => {
     setSaving(true);
     setFeedback(null);
     try {
-      await saveSettingProxies(proxiesText.split('\n'));
+      const saved = await saveSettingProxies(proxiesText.split('\n'));
+      setProxiesText((saved.proxies || []).join('\n'));
       setFeedback('Proxies salvos com sucesso.');
     } catch (e: any) {
       setFeedback(e?.message || String(e));
@@ -35,8 +36,9 @@ export const SettingsPanel: React.FC = () => {
         A cada download o app rotaciona entre os proxies da lista.
       </p>
       <div className="meta-field">
-        <label className="meta-label">Proxies (round-robin)</label>
+        <label className="meta-label" htmlFor="proxies-input">Proxies (round-robin)</label>
         <textarea
+          id="proxies-input"
           className="proxy-textarea"
           placeholder={'http://user:senha@host:porta\nsocks5://host:porta\n(Deixe vazio para não usar proxy)'}
           value={proxiesText}
@@ -50,7 +52,7 @@ export const SettingsPanel: React.FC = () => {
           <Save size={15} />
           <span>{saving ? 'Salvando...' : 'Salvar proxies'}</span>
         </button>
-        {feedback && <span className="feedback-text">{feedback}</span>}
+        {feedback && <span className="feedback-text" role="status">{feedback}</span>}
       </div>
     </div>
   );
