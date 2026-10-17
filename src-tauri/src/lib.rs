@@ -298,24 +298,9 @@ async fn start_download(
     let safe_filename = if safe_filename.is_empty() { "video".to_string() } else { safe_filename };
 
     tokio::task::spawn_blocking(move || {
-        let mut cmd = create_hidden_command(&yt_dlp);
-        cmd.arg("--newline");
-        cmd.arg("--no-mtime");
-        cmd.arg("--windows-filenames");
-        cmd.arg("--remote-components").arg("ejs:github");
-        cmd.arg("--js-runtimes").arg("node");
-
-        if qjs.exists() {
-            cmd.arg("--js-runtimes").arg(format!("quickjs:{}", qjs.to_string_lossy()));
-        }
-
-        if ffmpeg.exists() {
-            cmd.arg("--ffmpeg-location").arg(&ffmpeg_dir);
-        }
-
-        cmd.arg("--socket-timeout").arg("30");
-        cmd.arg("--retries").arg("10");
-        cmd.arg("--fragment-retries").arg("10");
+        let re_percent = regex::Regex::new(r"(\d+(?:\.\d+)?)%").unwrap();
+        let re_speed = regex::Regex::new(r"at\s+([\d\w\.\/]+)").unwrap();
+        let re_eta = regex::Regex::new(r"ETA\s+([\d:]+)").unwrap();
 
         let out_dir = if path.trim().is_empty() {
             match std::env::var("USERPROFILE") {
@@ -325,186 +310,222 @@ async fn start_download(
         } else {
             path.trim_end_matches(['/', '\\']).to_string()
         };
-
-        // Ensure target directory exists
         let _ = fs::create_dir_all(&out_dir);
 
-        let out_tmpl = format!("{}/{}.%(ext)s", out_dir, safe_filename);
-        cmd.arg("-o").arg(&out_tmpl);
+        let mut last_tmp: Option<PathBuf> = None;
+        let mut final_err = String::new();
+        let mut succeeded = false;
 
-        if download_type == "audio" {
-            cmd.arg("-x");
-            cmd.arg("--audio-format").arg(&target_format);
-            cmd.arg("--audio-quality").arg("0");
-        } else {
-            let digits: String = quality.chars().filter(|c| c.is_ascii_digit()).collect();
-            if !digits.is_empty() && quality != "Melhor" {
-                let fmt = format!("bestvideo[height<={0}]+bestaudio/best[height<={0}]/best", digits);
-                cmd.arg("-f").arg(&fmt);
+        for attempt in 0..2usize {
+            last_tmp = identity::prepare_cookie(&app_handle, &task_id_clone);
+            let proxy = identity::next_proxy(&app_handle);
+
+            let mut cmd = create_hidden_command(&yt_dlp);
+            cmd.arg("--newline");
+            cmd.arg("--no-mtime");
+            cmd.arg("--windows-filenames");
+            cmd.arg("--remote-components").arg("ejs:github");
+            cmd.arg("--js-runtimes").arg("node");
+            if qjs.exists() {
+                cmd.arg("--js-runtimes").arg(format!("quickjs:{}", qjs.to_string_lossy()));
+            }
+            if ffmpeg.exists() {
+                cmd.arg("--ffmpeg-location").arg(&ffmpeg_dir);
+            }
+            cmd.arg("--socket-timeout").arg("30");
+            cmd.arg("--retries").arg("10");
+            cmd.arg("--fragment-retries").arg("10");
+            cmd.arg("--sleep-requests").arg("1");
+            if let Some(jar) = &last_tmp {
+                cmd.arg("--cookies").arg(jar);
+            }
+            if let Some(p) = &proxy {
+                cmd.arg("--proxy").arg(p);
+            }
+
+            let out_tmpl = format!("{}/{}.%(ext)s", out_dir, safe_filename);
+            cmd.arg("-o").arg(&out_tmpl);
+
+            if download_type == "audio" {
+                cmd.arg("-x");
+                cmd.arg("--audio-format").arg(&target_format);
+                cmd.arg("--audio-quality").arg("0");
             } else {
-                cmd.arg("-f").arg("bestvideo+bestaudio/best");
+                let digits: String = quality.chars().filter(|c| c.is_ascii_digit()).collect();
+                if !digits.is_empty() && quality != "Melhor" {
+                    let fmt = format!("bestvideo[height<={0}]+bestaudio/best[height<={0}]/best", digits);
+                    cmd.arg("-f").arg(&fmt);
+                } else {
+                    cmd.arg("-f").arg("bestvideo+bestaudio/best");
+                }
+                if target_format == "mkv" || target_format == "webm" || target_format == "mp4" {
+                    cmd.arg("--merge-output-format").arg(&target_format);
+                } else {
+                    cmd.arg("--recode-video").arg(&target_format);
+                }
             }
+            cmd.arg(&url);
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-            if target_format == "mkv" || target_format == "webm" || target_format == "mp4" {
-                cmd.arg("--merge-output-format").arg(&target_format);
+            let mut mask_next = false;
+            let args_disp: Vec<String> = cmd.get_args().map(|a| {
+                let s = a.to_string_lossy().to_string();
+                if mask_next {
+                    mask_next = false;
+                    return "****".to_string();
+                }
+                if s == "--proxy" { mask_next = true; }
+                s
+            }).collect();
+            println!("[yt-dlp command] {}", args_disp.join(" "));
+
+            let mut child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => {
+                    final_err = format!("Falha ao iniciar yt-dlp: {}", e);
+                    eprintln!("[yt-dlp error] {}", final_err);
+                    break;
+                }
+            };
+
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+
+            let mut stderr_lines: Vec<String> = Vec::new();
+            let stderr_handle = if let Some(err_pipe) = stderr {
+                Some(std::thread::spawn(move || {
+                    let reader = BufReader::new(err_pipe);
+                    let mut captured = Vec::new();
+                    for line in reader.lines() {
+                        if let Ok(l) = line {
+                            eprintln!("[yt-dlp stderr] {}", l);
+                            captured.push(l);
+                        }
+                    }
+                    captured
+                }))
             } else {
-                cmd.arg("--recode-video").arg(&target_format);
-            }
-        }
-        cmd.arg(&url);
+                None
+            };
 
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-        let mut mask_next = false;
-        let args_disp: Vec<String> = cmd.get_args().map(|a| {
-            let s = a.to_string_lossy().to_string();
-            if mask_next {
-                mask_next = false;
-                return "****".to_string();
-            }
-            if s == "--proxy" { mask_next = true; }
-            s
-        }).collect();
-        println!("[yt-dlp command] {}", args_disp.join(" "));
-
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                let err_msg = format!("Falha ao iniciar yt-dlp: {}", e);
-                eprintln!("[yt-dlp error] {}", err_msg);
-                let _ = app_handle.emit("download-progress", DownloadProgressPayload {
-                    task_id: task_id_clone,
-                    status: "error".to_string(),
-                    progress: 0.0,
-                    speed: "".to_string(),
-                    eta: "".to_string(),
-                    message: err_msg,
-                });
-                return;
-            }
-        };
-
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-
-        let re_percent = regex::Regex::new(r"(\d+(?:\.\d+)?)%").unwrap();
-        let re_speed = regex::Regex::new(r"at\s+([\d\w\.\/]+)").unwrap();
-        let re_eta = regex::Regex::new(r"ETA\s+([\d:]+)").unwrap();
-
-        let mut stderr_lines: Vec<String> = Vec::new();
-        let stderr_handle = if let Some(err_pipe) = stderr {
-            Some(std::thread::spawn(move || {
-                let reader = BufReader::new(err_pipe);
-                let mut captured = Vec::new();
+            if let Some(out_pipe) = stdout {
+                let reader = BufReader::new(out_pipe);
                 for line in reader.lines() {
                     if let Ok(l) = line {
-                        eprintln!("[yt-dlp stderr] {}", l);
-                        captured.push(l);
+                        println!("[yt-dlp stdout] {}", l);
+                        if l.contains("[download]") {
+                            let mut progress = 0.0;
+                            if let Some(cap) = re_percent.captures(&l) {
+                                if let Ok(p) = cap[1].parse::<f64>() {
+                                    progress = p;
+                                }
+                            }
+                            let speed = re_speed.captures(&l).map(|c| c[1].to_string()).unwrap_or_default();
+                            let eta = re_eta.captures(&l).map(|c| c[1].to_string()).unwrap_or_default();
+
+                            let _ = app_handle.emit("download-progress", DownloadProgressPayload {
+                                task_id: task_id_clone.clone(),
+                                status: "downloading".to_string(),
+                                progress,
+                                speed,
+                                eta,
+                                message: format!("Baixando: {}%", progress as i32),
+                            });
+                        } else if l.contains("[ExtractAudio]") || l.contains("[Merger]") || l.contains("[Fixup]") {
+                            let _ = app_handle.emit("download-progress", DownloadProgressPayload {
+                                task_id: task_id_clone.clone(),
+                                status: "processing".to_string(),
+                                progress: 100.0,
+                                speed: "".to_string(),
+                                eta: "".to_string(),
+                                message: "Convertendo / mesclando áudio e vídeo...".to_string(),
+                            });
+                        }
                     }
                 }
-                captured
-            }))
-        } else {
-            None
-        };
+            }
 
-        if let Some(out_pipe) = stdout {
-            let reader = BufReader::new(out_pipe);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    println!("[yt-dlp stdout] {}", l);
-                    if l.contains("[download]") {
-                        let mut progress = 0.0;
-                        if let Some(cap) = re_percent.captures(&l) {
-                            if let Ok(p) = cap[1].parse::<f64>() {
-                                progress = p;
-                            }
-                        }
-                        let speed = re_speed.captures(&l).map(|c| c[1].to_string()).unwrap_or_default();
-                        let eta = re_eta.captures(&l).map(|c| c[1].to_string()).unwrap_or_default();
+            if let Some(handle) = stderr_handle {
+                if let Ok(errs) = handle.join() {
+                    stderr_lines = errs;
+                }
+            }
 
+            let status = child.wait();
+            match status {
+                Ok(s) if s.success() => {
+                    succeeded = true;
+                    break;
+                }
+                _ => {
+                    final_err = if stderr_lines.is_empty() {
+                        "Processo do yt-dlp encerrou com erro".to_string()
+                    } else {
+                        stderr_lines.join("\n")
+                    };
+                    eprintln!("[yt-dlp error] Process exited with failure: {}", final_err);
+                    if identity::is_block_error(&final_err) && attempt == 0 {
                         let _ = app_handle.emit("download-progress", DownloadProgressPayload {
                             task_id: task_id_clone.clone(),
                             status: "downloading".to_string(),
-                            progress,
-                            speed,
-                            eta,
-                            message: format!("Baixando: {}%", progress as i32),
-                        });
-                    } else if l.contains("[ExtractAudio]") || l.contains("[Merger]") || l.contains("[Fixup]") {
-                        let _ = app_handle.emit("download-progress", DownloadProgressPayload {
-                            task_id: task_id_clone.clone(),
-                            status: "processing".to_string(),
-                            progress: 100.0,
+                            progress: 0.0,
                             speed: "".to_string(),
                             eta: "".to_string(),
-                            message: "Convertendo / mesclando áudio e vídeo...".to_string(),
+                            message: "Rotacionando identidade de acesso e tentando novamente...".to_string(),
                         });
+                        continue; // 2º ciclo cai em slot novo de jar + próximo proxy
                     }
+                    break;
                 }
             }
         }
 
-        if let Some(handle) = stderr_handle {
-            if let Ok(errs) = handle.join() {
-                stderr_lines = errs;
-            }
+        if let Some(tmp) = &last_tmp {
+            let _ = fs::remove_file(tmp);
         }
 
-        let status = child.wait();
-        match status {
-            Ok(s) if s.success() => {
-                let history_file = get_app_dir(&app_handle).join("history.json");
-                let mut history: Vec<HistoryItem> = if history_file.exists() {
-                    fs::read_to_string(&history_file)
-                        .ok()
-                        .and_then(|s| serde_json::from_str(&s).ok())
-                        .unwrap_or_default()
-                } else {
-                    Vec::new()
-                };
+        if succeeded {
+            let history_file = get_app_dir(&app_handle).join("history.json");
+            let mut history: Vec<HistoryItem> = if history_file.exists() {
+                fs::read_to_string(&history_file)
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            let now = chrono::Local::now().format("%d/%m/%Y %H:%M").to_string();
+            let display_type = format!("{} ({})",
+                if download_type == "audio" { "Áudio" } else { "Vídeo" },
+                target_format.to_uppercase()
+            );
+            history.insert(0, HistoryItem {
+                title: safe_filename,
+                path: out_dir,
+                date: now,
+                r#type: display_type,
+                size: serde_json::json!("N/A"),
+            });
+            history.truncate(100);
+            let _ = fs::write(&history_file, serde_json::to_string_pretty(&history).unwrap_or_default());
 
-                let now = chrono::Local::now().format("%d/%m/%Y %H:%M").to_string();
-                let display_type = format!("{} ({})", 
-                    if download_type == "audio" { "Áudio" } else { "Vídeo" },
-                    target_format.to_uppercase()
-                );
-
-                history.insert(0, HistoryItem {
-                    title: safe_filename,
-                    path: out_dir,
-                    date: now,
-                    r#type: display_type,
-                    size: serde_json::json!("N/A"),
-                });
-                history.truncate(100);
-                let _ = fs::write(&history_file, serde_json::to_string_pretty(&history).unwrap_or_default());
-
-                let _ = app_handle.emit("download-progress", DownloadProgressPayload {
-                    task_id: task_id_clone,
-                    status: "finished".to_string(),
-                    progress: 100.0,
-                    speed: "0".to_string(),
-                    eta: "0".to_string(),
-                    message: "Download concluído com sucesso!".to_string(),
-                });
-            }
-            _ => {
-                let err_msg = if !stderr_lines.is_empty() {
-                    stderr_lines.join("\n")
-                } else {
-                    "Processo do yt-dlp encerrou com erro".to_string()
-                };
-                eprintln!("[yt-dlp error] Process exited with failure: {}", err_msg);
-                let _ = app_handle.emit("download-progress", DownloadProgressPayload {
-                    task_id: task_id_clone,
-                    status: "error".to_string(),
-                    progress: 0.0,
-                    speed: "".to_string(),
-                    eta: "".to_string(),
-                    message: err_msg,
-                });
-            }
+            let _ = app_handle.emit("download-progress", DownloadProgressPayload {
+                task_id: task_id_clone,
+                status: "finished".to_string(),
+                progress: 100.0,
+                speed: "0".to_string(),
+                eta: "0".to_string(),
+                message: "Download concluído com sucesso!".to_string(),
+            });
+        } else {
+            let _ = app_handle.emit("download-progress", DownloadProgressPayload {
+                task_id: task_id_clone,
+                status: "error".to_string(),
+                progress: 0.0,
+                speed: "".to_string(),
+                eta: "".to_string(),
+                message: if final_err.is_empty() { "Processo do yt-dlp encerrou com erro".to_string() } else { final_err },
+            });
         }
     });
 
