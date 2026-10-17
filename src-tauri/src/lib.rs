@@ -550,6 +550,7 @@ async fn open_folder(path: String) -> Result<(), String> {
     }
 }
 
+pub mod identity;
 pub mod updater;
 
 pub fn run() {
