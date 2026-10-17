@@ -11,7 +11,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-fn create_hidden_command<P: AsRef<std::ffi::OsStr>>(program: P) -> Command {
+pub fn create_hidden_command<P: AsRef<std::ffi::OsStr>>(program: P) -> Command {
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -67,7 +67,7 @@ pub struct HistoryItem {
     pub size: serde_json::Value,
 }
 
-fn get_app_dir(app: &AppHandle) -> PathBuf {
+pub fn get_app_dir(app: &AppHandle) -> PathBuf {
     use tauri::Manager;
     let path = app.path().app_local_data_dir().unwrap_or_else(|_| {
         if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
@@ -139,6 +139,14 @@ async fn analyze_video(app: AppHandle, url: String) -> Result<AnalysisResult, St
     }
     cmd.arg("--socket-timeout").arg("30");
     cmd.arg("--retries").arg("10");
+    let cookies = identity::prepare_cookie(&app, "analyze");
+    if let Some(jar) = &cookies {
+        cmd.arg("--cookies").arg(jar);
+    }
+    if let Some(proxy) = identity::next_proxy(&app) {
+        cmd.arg("--proxy").arg(&proxy);
+    }
+    cmd.arg("--sleep-requests").arg("1");
     cmd.arg(&url);
 
     let output = cmd.output()
@@ -212,6 +220,14 @@ async fn analyze_playlist(app: AppHandle, url: String) -> Result<PlaylistResult,
     }
     cmd.arg("--socket-timeout").arg("30");
     cmd.arg("--retries").arg("10");
+    let cookies = identity::prepare_cookie(&app, "analyze");
+    if let Some(jar) = &cookies {
+        cmd.arg("--cookies").arg(jar);
+    }
+    if let Some(proxy) = identity::next_proxy(&app) {
+        cmd.arg("--proxy").arg(&proxy);
+    }
+    cmd.arg("--sleep-requests").arg("1");
     cmd.arg(&url);
 
     let output = cmd.output()
@@ -339,7 +355,17 @@ async fn start_download(
 
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-        println!("[yt-dlp command] {:?}", cmd);
+        let mut mask_next = false;
+        let args_disp: Vec<String> = cmd.get_args().map(|a| {
+            let s = a.to_string_lossy().to_string();
+            if mask_next {
+                mask_next = false;
+                return "****".to_string();
+            }
+            if s == "--proxy" { mask_next = true; }
+            s
+        }).collect();
+        println!("[yt-dlp command] {}", args_disp.join(" "));
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,

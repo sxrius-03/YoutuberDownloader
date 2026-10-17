@@ -1,4 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
+use tauri::AppHandle;
+
+use crate::{create_hidden_command, get_app_dir, load_settings_sync};
 
 pub const POOL_CAP: usize = 100;
 
@@ -98,4 +103,96 @@ mod tests {
     fn round_robin_sem_opcoes_nao_panica() {
         assert_eq!(next_index(7, 0), 0);
     }
+}
+
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+pub fn identity_dir(app: &AppHandle) -> PathBuf {
+    let dir = get_app_dir(app).join("yt-identity");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+fn state_path(app: &AppHandle) -> PathBuf {
+    identity_dir(app).join("identity.json")
+}
+
+pub fn load_state(app: &AppHandle) -> RrState {
+    fs::read_to_string(state_path(app))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_state(app: &AppHandle, st: &RrState) {
+    let _ = fs::write(state_path(app), serde_json::to_string_pretty(st).unwrap_or_default());
+}
+
+/// Gera jar anônimo (SEM conta) via curl.exe nativo do Windows: 2 GETs quentes.
+pub fn generate_cookie_jar(slot: &Path) -> Result<(), String> {
+    let jar = slot.to_string_lossy().to_string();
+    let ua = BROWSER_UA.to_string();
+
+    let mut home = create_hidden_command("curl.exe");
+    home.arg("-s").arg("-L")
+        .arg("-c").arg(&jar)
+        .arg("-A").arg(&ua)
+        .arg("https://www.youtube.com/?hl=pt-BR");
+    home.output().map_err(|e| format!("curl indisponivel: {}", e))?;
+
+    let mut robots = create_hidden_command("curl.exe");
+    robots.arg("-s").arg("-L")
+        .arg("-c").arg(&jar).arg("-b").arg(&jar)
+        .arg("-A").arg(&ua)
+        .arg("https://www.youtube.com/robots.txt");
+    let _ = robots.output();
+
+    let content = fs::read_to_string(slot).unwrap_or_default();
+    if validate_cookie_jar(&content) {
+        Ok(())
+    } else {
+        let _ = fs::remove_file(slot);
+        Err("Não foi possível gerar identidade anônima do YouTube".to_string())
+    }
+}
+
+/// Avança o índice do pool (round-robin persistido), gera o slot se faltar e
+/// devolve uma CÓPIA temporária por tarefa — o yt-dlp reescreve o jar ao sair
+/// e o master não pode ser tocado por runs concorrentes.
+/// Falha de geração => None (download segue sem cookies).
+pub fn prepare_cookie(app: &AppHandle, task_id: &str) -> Option<PathBuf> {
+    let dir = identity_dir(app);
+    let mut st = load_state(app);
+    let idx = st.jar_idx;
+    st.jar_idx = next_index(idx, POOL_CAP);
+    save_state(app, &st);
+
+    let slot = dir.join(format!("jar_{}.txt", idx));
+    let valid = fs::read_to_string(&slot).ok()
+        .map(|c| validate_cookie_jar(&c))
+        .unwrap_or(false);
+    if !valid && generate_cookie_jar(&slot).is_err() {
+        return None;
+    }
+
+    // ponytail: mesmo nome de copy para multiplas analyze_* concorrentes;
+    // race teorica aceita, trocar por sufixo unico se virar problema real.
+    let tmp = dir.join(format!("temp_cookie_{}.txt", task_id));
+    match fs::copy(&slot, &tmp) {
+        Ok(_) => Some(tmp),
+        Err(_) => Some(slot),
+    }
+}
+
+/// Round-robin da lista de proxies do usuário (vazia => None).
+pub fn next_proxy(app: &AppHandle) -> Option<String> {
+    let proxies = load_settings_sync(app).proxies;
+    if proxies.is_empty() {
+        return None;
+    }
+    let mut st = load_state(app);
+    let idx = st.proxy_idx % proxies.len();
+    st.proxy_idx = next_index(idx, proxies.len());
+    save_state(app, &st);
+    Some(proxies[idx].clone())
 }
