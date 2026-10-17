@@ -180,7 +180,8 @@ pub fn prepare_cookie(app: &AppHandle, task_id: &str) -> Option<PathBuf> {
     let tmp = dir.join(format!("temp_cookie_{}.txt", task_id));
     match fs::copy(&slot, &tmp) {
         Ok(_) => Some(tmp),
-        Err(_) => Some(slot),
+        // Nunca entregar o master do pool ao yt-dlp (ele reescreve o jar ao sair).
+        Err(_) => None,
     }
 }
 
