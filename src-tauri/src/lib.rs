@@ -54,6 +54,8 @@ pub struct DownloadProgressPayload {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     pub paths: Vec<String>,
+    #[serde(default)]
+    pub proxies: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -483,13 +485,12 @@ async fn start_download(
     Ok(task_id)
 }
 
-#[tauri::command]
-async fn get_settings(app: AppHandle) -> Result<Settings, String> {
-    let settings_file = get_app_dir(&app).join("settings.json");
+pub fn load_settings_sync(app: &AppHandle) -> Settings {
+    let settings_file = get_app_dir(app).join("settings.json");
     if settings_file.exists() {
         if let Ok(content) = fs::read_to_string(&settings_file) {
             if let Ok(s) = serde_json::from_str::<Settings>(&content) {
-                return Ok(s);
+                return s;
             }
         }
     }
@@ -497,14 +498,36 @@ async fn get_settings(app: AppHandle) -> Result<Settings, String> {
         Ok(up) => format!("{}\\Downloads", up),
         Err(_) => "C:\\Downloads".to_string(),
     };
-    let default_settings = Settings { paths: vec![default_downloads] };
-    let _ = fs::write(&settings_file, serde_json::to_string_pretty(&default_settings).unwrap_or_default());
-    Ok(default_settings)
+    Settings { paths: vec![default_downloads], proxies: vec![] }
+}
+
+#[tauri::command]
+async fn get_settings(app: AppHandle) -> Result<Settings, String> {
+    let settings = load_settings_sync(&app);
+    let settings_file = get_app_dir(&app).join("settings.json");
+    if !settings_file.exists() {
+        let _ = fs::write(&settings_file, serde_json::to_string_pretty(&settings).unwrap_or_default());
+    }
+    Ok(settings)
+}
+
+#[tauri::command]
+async fn save_setting_proxies(app: AppHandle, proxies: Vec<String>) -> Result<Settings, String> {
+    let mut settings = load_settings_sync(&app);
+    settings.proxies = proxies
+        .into_iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+    let settings_file = get_app_dir(&app).join("settings.json");
+    fs::write(&settings_file, serde_json::to_string_pretty(&settings).unwrap_or_default())
+        .map_err(|e| format!("Falha ao salvar proxies: {}", e))?;
+    Ok(settings)
 }
 
 #[tauri::command]
 async fn save_setting_path(app: AppHandle, path: String) -> Result<Settings, String> {
-    let mut settings = get_settings(app.clone()).await.unwrap_or(Settings { paths: vec![] });
+    let mut settings = get_settings(app.clone()).await.unwrap_or(Settings { paths: vec![], proxies: vec![] });
     if !path.is_empty() && !settings.paths.contains(&path) {
         settings.paths.insert(0, path);
         settings.paths.truncate(10);
@@ -564,6 +587,7 @@ pub fn run() {
             start_download,
             get_settings,
             save_setting_path,
+            save_setting_proxies,
             choose_folder,
             get_history,
             open_folder,
