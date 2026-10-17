@@ -34,6 +34,9 @@ test.describe('Youtube Downloader Desktop App - Smoke & Visual', () => {
     await expect(playlistTab).toBeVisible();
     await expect(historyTab).toBeVisible();
 
+    const settingsTab = page.locator('button.tab-btn:has-text("Ajustes")');
+    await expect(settingsTab).toBeVisible();
+
     // Check active tab class
     await expect(singleTab).toHaveClass(/active/);
 
@@ -47,7 +50,7 @@ test.describe('Youtube Downloader Desktop App - Smoke & Visual', () => {
     expect(errors).toEqual([]);
   });
 
-  test('Can navigate between all 3 tabs smoothly', async ({ page }) => {
+  test('Can navigate between all 4 tabs smoothly', async ({ page }) => {
     await page.goto('/');
 
     const singleTab = page.locator('button.tab-btn:has-text("Download Único")');
@@ -68,6 +71,14 @@ test.describe('Youtube Downloader Desktop App - Smoke & Visual', () => {
     await page.waitForTimeout(300);
     await expect(page.locator('h3:has-text("Histórico de Downloads")')).toBeVisible();
     await page.screenshot({ path: 'e2e-screenshots/03-history-tab.png', fullPage: true });
+
+    // Go to Settings tab
+    const settingsTab = page.locator('button.tab-btn:has-text("Ajustes")');
+    await settingsTab.click();
+    await expect(settingsTab).toHaveClass(/active/);
+    await page.waitForTimeout(300);
+    await expect(page.locator('textarea.proxy-textarea')).toBeVisible();
+    await page.screenshot({ path: 'e2e-screenshots/04-settings-tab.png', fullPage: true });
 
     // Return to Single Download tab
     await singleTab.click();

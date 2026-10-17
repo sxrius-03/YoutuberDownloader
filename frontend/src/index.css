@@ -380,6 +380,31 @@ button.tab-btn.active {
   border-color: var(--accent-blue);
 }
 
+.proxy-textarea {
+  width: 100%;
+  min-height: 140px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 0.2s;
+  resize: vertical;
+}
+
+.proxy-textarea:focus {
+  border-color: var(--accent-blue);
+}
+
+.feedback-text {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* Segmented Buttons Control */
 .segmented-control {
   display: inline-flex;

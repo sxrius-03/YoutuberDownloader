@@ -63,7 +63,7 @@ export default function SingleDownload() {
   const [audioContainer, setAudioContainer] = useState('mp3');
   const [filename, setFilename] = useState('');
   const [savePath, setSavePath] = useState('');
-  const [settings, setSettings] = useState<Settings>({ paths: [] });
+  const [settings, setSettings] = useState<Settings>({ paths: [], proxies: [] });
   
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);

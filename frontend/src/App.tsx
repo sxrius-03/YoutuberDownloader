@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Film, ListMusic, History, Download } from 'lucide-react';
+import { Film, ListMusic, History, Settings as SettingsIcon, Download } from 'lucide-react';
 import SingleDownload from './components/SingleDownload';
 import PlaylistDownload from './components/PlaylistDownload';
 import HistoryList from './components/HistoryList';
+import SettingsPanel from './components/SettingsPanel';
 import UpdateChecker from './components/UpdateChecker';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'single' | 'playlist' | 'history'>('single');
+  const [activeTab, setActiveTab] = useState<'single' | 'playlist' | 'history' | 'settings'>('single');
 
   return (
     <div>
@@ -53,12 +54,21 @@ export default function App() {
           <History size={16} />
           <span>Histórico</span>
         </button>
+
+        <button
+          className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          <SettingsIcon size={16} />
+          <span>Ajustes</span>
+        </button>
       </nav>
 
       <main>
         {activeTab === 'single' && <SingleDownload />}
         {activeTab === 'playlist' && <PlaylistDownload />}
         {activeTab === 'history' && <HistoryList />}
+        {activeTab === 'settings' && <SettingsPanel />}
       </main>
 
       <UpdateChecker />
