@@ -23,6 +23,7 @@ export interface PlaylistResult {
 
 export interface Settings {
   paths: string[];
+  proxies: string[];
 }
 
 export interface DownloadProgressPayload {
@@ -66,6 +67,13 @@ export async function saveSettingPath(path: string): Promise<Settings> {
   });
   if (!res.ok) throw new Error('Falha ao salvar caminho');
   return res.json();
+}
+
+export async function saveSettingProxies(proxies: string[]): Promise<Settings> {
+  if (isTauri()) {
+    return invoke<Settings>('save_setting_proxies', { proxies });
+  }
+  throw new Error('Proxies só podem ser configurados no app nativo');
 }
 
 export async function chooseFolder(): Promise<string | null> {

@@ -48,7 +48,7 @@ export default function PlaylistDownload() {
   const [videoContainer, setVideoContainer] = useState('mp4');
   const [audioContainer, setAudioContainer] = useState('mp3');
   const [savePath, setSavePath] = useState('');
-  const [settings, setSettings] = useState<Settings>({ paths: [] });
+  const [settings, setSettings] = useState<Settings>({ paths: [], proxies: [] });
   const [logs, setLogs] = useState<string[]>([]);
   const [downloading, setDownloading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
