@@ -20,7 +20,7 @@ export default function App() {
             <div className="brand-title">
               <span>Youtube Downloader</span>
             </div>
-            <div className="brand-subtitle">Desktop Native v2.0.9</div>
+            <div className="brand-subtitle">Desktop Native v2.0.10</div>
           </div>
         </div>
 
