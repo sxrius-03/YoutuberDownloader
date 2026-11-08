@@ -1,42 +1,29 @@
 import { useState, useEffect } from 'react';
-import { 
-  Clipboard, 
-  Search, 
-  Download, 
-  CheckSquare, 
-  Square, 
-  ListMusic, 
-  Loader2, 
-  X, 
-  AlertCircle,
+import {
+  Clipboard,
+  Search,
+  Download,
+  CheckSquare,
+  Square,
+  ListMusic,
+  Loader2,
+  X,
   Terminal,
   Video,
   Music,
-  FileType
+  FolderOpen
 } from 'lucide-react';
 import type { PlaylistVideo, Settings } from '../api/bridge';
 import {
   getSettings,
   analyzePlaylist,
-  startDownload
+  startDownload,
+  openFolder
 } from '../api/bridge';
 import FolderPicker from './FolderPicker';
+import Banner from './Banner';
+import { VIDEO_CONTAINERS, AUDIO_CONTAINERS } from '../containers';
 
-const VIDEO_CONTAINERS = [
-  { value: 'mp4', label: 'MP4 (Universal)' },
-  { value: 'mkv', label: 'MKV (Matroska)' },
-  { value: 'webm', label: 'WEBM (Web)' },
-  { value: 'mov', label: 'MOV (Apple)' },
-  { value: 'avi', label: 'AVI (Legado)' },
-];
-
-const AUDIO_CONTAINERS = [
-  { value: 'mp3', label: 'MP3 (Universal)' },
-  { value: 'm4a', label: 'M4A (Apple AAC)' },
-  { value: 'wav', label: 'WAV (Sem Perdas)' },
-  { value: 'flac', label: 'FLAC (Lossless)' },
-  { value: 'opus', label: 'OPUS (Moderno)' },
-];
 
 export default function PlaylistDownload() {
   const [url, setUrl] = useState('');
@@ -52,6 +39,10 @@ export default function PlaylistDownload() {
   const [logs, setLogs] = useState<string[]>([]);
   const [downloading, setDownloading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [queueTotal, setQueueTotal] = useState(0);
+  const [doneCount, setDoneCount] = useState(0);
+  const [errorCount, setErrorCount] = useState(0);
+  const [finished, setFinished] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -70,7 +61,7 @@ export default function PlaylistDownload() {
         setUrl(text.trim());
       }
     } catch {
-      // Ignore
+      // Sem permissão de leitura da área de transferência: o usuário cola com Ctrl+V.
     }
   };
 
@@ -82,14 +73,15 @@ export default function PlaylistDownload() {
     setSelectedUrls(new Set());
     setErrorMsg('');
     setLogs([]);
+    setFinished(false);
 
     try {
       const data = await analyzePlaylist(url.trim());
       setTitle(data.title || 'Playlist do YouTube');
       setVideos(data.videos || []);
-      setSelectedUrls(new Set(data.videos.map(v => v.url)));
+      setSelectedUrls(new Set((data.videos || []).map(v => v.url)));
     } catch (e: any) {
-      setErrorMsg("Falha ao analisar a playlist: " + (e?.message || String(e)));
+      setErrorMsg('Falha ao analisar a playlist: ' + (e?.message || String(e)));
     } finally {
       setLoading(false);
     }
@@ -103,111 +95,123 @@ export default function PlaylistDownload() {
 
   const toggleSelectVideo = (videoUrl: string) => {
     const updated = new Set(selectedUrls);
-    if (updated.has(videoUrl)) {
-      updated.delete(videoUrl);
-    } else {
-      updated.add(videoUrl);
-    }
+    if (updated.has(videoUrl)) updated.delete(videoUrl);
+    else updated.add(videoUrl);
     setSelectedUrls(updated);
-  };
-
-  const handleSelectAll = () => {
-    setSelectedUrls(new Set(videos.map(v => v.url)));
-  };
-
-  const handleSelectNone = () => {
-    setSelectedUrls(new Set());
-  };
-
-  const handleDownloadSelected = async () => {
-    if (selectedUrls.size === 0) return;
-    setDownloading(true);
-    setLogs([]);
-    setErrorMsg('');
-
-    const urlsToDownload = videos.filter(v => selectedUrls.has(v.url));
-    const total = urlsToDownload.length;
-    const chosenContainer = downloadType === 'audio' ? audioContainer : videoContainer;
-
-    for (let i = 0; i < total; i++) {
-      setCurrentIndex(i + 1);
-      const v = urlsToDownload[i];
-      addLog(`[${i + 1}/${total}] Baixando (${chosenContainer.toUpperCase()}): ${v.title}`);
-      
-      try {
-        await new Promise<void>(async (resolve) => {
-          try {
-            const cleanup = await startDownload(
-              {
-                url: v.url,
-                path: savePath,
-                filename: v.title,
-                downloadType,
-                quality: 'Melhor',
-                container: chosenContainer
-              },
-              (payload) => {
-                if (payload.status === 'finished') {
-                  addLog(`✅ Sucesso: ${v.title}`);
-                  cleanup();
-                  resolve();
-                } else if (payload.status === 'error') {
-                  addLog(`❌ Erro em ${v.title}: ${payload.message}`);
-                  cleanup();
-                  resolve();
-                }
-              }
-            );
-          } catch (e: any) {
-            addLog(`❌ Falha: ${v.title} - ${e?.message || String(e)}`);
-            resolve();
-          }
-        });
-      } catch (e: any) {
-        addLog(`❌ Erro inesperado: ${v.title} - ${e?.message || String(e)}`);
-      }
-    }
-    setDownloading(false);
   };
 
   const addLog = (msg: string) => {
     setLogs(prev => [...prev, msg]);
   };
 
-  const activeFormatLabel = downloadType === 'video' 
-    ? videoContainer.toUpperCase() 
+  const handleOpenFolder = async () => {
+    try {
+      await openFolder(savePath);
+    } catch (e: any) {
+      setErrorMsg('Não foi possível abrir a pasta: ' + (e?.message || String(e)));
+    }
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedUrls.size === 0) return;
+    const queue = videos.filter(v => selectedUrls.has(v.url));
+    const total = queue.length;
+    const chosenContainer = downloadType === 'audio' ? audioContainer : videoContainer;
+
+    setDownloading(true);
+    setFinished(false);
+    setLogs([]);
+    setErrorMsg('');
+    setQueueTotal(total);
+    setCurrentIndex(0);
+    setDoneCount(0);
+    setErrorCount(0);
+
+    let ok = 0;
+    let failed = 0;
+
+    for (let i = 0; i < total; i++) {
+      setCurrentIndex(i + 1);
+      const v = queue[i];
+      addLog(`[${i + 1}/${total}] Baixando (${chosenContainer.toUpperCase()}): ${v.title}`);
+
+      await new Promise<void>((resolve) => {
+        let cleanup: (() => void) | undefined;
+        let settled = false;
+        const settle = (success: boolean, msg: string) => {
+          if (settled) return;
+          settled = true;
+          if (success) ok++; else failed++;
+          setDoneCount(ok);
+          setErrorCount(failed);
+          addLog(msg);
+          cleanup?.();
+          resolve();
+        };
+
+        startDownload(
+          {
+            url: v.url,
+            path: savePath,
+            filename: v.title,
+            downloadType,
+            quality: 'Melhor',
+            container: chosenContainer
+          },
+          (payload) => {
+            if (payload.status === 'finished') settle(true, `Concluído: ${v.title}`);
+            else if (payload.status === 'error') settle(false, `Erro em ${v.title}: ${payload.message}`);
+          }
+        )
+          .then((fn) => {
+            cleanup = fn;
+            if (settled) fn(); // evento chegou antes do retorno: libera o listener agora
+          })
+          .catch((e: any) => settle(false, `Falha: ${v.title} - ${e?.message || String(e)}`));
+      });
+    }
+
+    setDownloading(false);
+    setFinished(true);
+  };
+
+  const activeFormatLabel = downloadType === 'video'
+    ? videoContainer.toUpperCase()
     : audioContainer.toUpperCase();
+
+  const processed = doneCount + errorCount;
+  const progressPct = queueTotal > 0 ? Math.round((processed / queueTotal) * 100) : 0;
 
   return (
     <div className="surface-card">
-      {/* Search & URL Input Bar */}
       <div className="search-pill-container">
-        <input 
-          type="text" 
-          value={url} 
-          onChange={(e) => setUrl(e.target.value)} 
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Cole a URL da Playlist do YouTube (ex: https://youtube.com/playlist?list=...)" 
+          placeholder="Cole a URL da playlist do YouTube (ex: https://youtube.com/playlist?list=...)"
+          aria-label="URL da playlist do YouTube"
           disabled={loading || downloading}
           className="search-input"
         />
 
         {url && !loading && !downloading && (
-          <button 
-            type="button" 
-            className="btn-icon-action" 
+          <button
+            type="button"
+            className="btn-icon-action btn-icon-only"
             onClick={() => setUrl('')}
             title="Limpar campo"
-            style={{ padding: '0.35rem 0.5rem' }}
+            aria-label="Limpar campo"
           >
             <X size={14} />
           </button>
         )}
 
-        <button 
+        <button
           type="button"
-          className="btn-icon-action" 
-          onClick={handlePasteClipboard} 
+          className="btn-icon-action"
+          onClick={handlePasteClipboard}
           disabled={loading || downloading}
           title="Colar da Área de Transferência"
         >
@@ -215,15 +219,15 @@ export default function PlaylistDownload() {
           <span>Colar</span>
         </button>
 
-        <button 
+        <button
           type="button"
-          className="btn-primary" 
-          onClick={handleAnalyze} 
+          className="btn-primary"
+          onClick={handleAnalyze}
           disabled={loading || downloading || !url.trim()}
         >
           {loading ? (
             <>
-              <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              <Loader2 size={16} className="spin-animation" />
               <span>Analisando...</span>
             </>
           ) : (
@@ -235,42 +239,43 @@ export default function PlaylistDownload() {
         </button>
       </div>
 
-      {errorMsg && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', padding: '0.75rem 1rem', backgroundColor: 'var(--error-bg)', color: 'var(--error)', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', fontWeight: 600 }}>
-          <AlertCircle size={16} style={{ flexShrink: 0 }} />
-          <span>{errorMsg}</span>
-        </div>
+      {errorMsg && <Banner kind="error">{errorMsg}</Banner>}
+
+      {!loading && videos.length === 0 && (
+        <ol className="steps-guide" aria-label="Como baixar uma playlist">
+          <li><span className="step-num">1</span><span>Cole o link da playlist</span></li>
+          <li><span className="step-num">2</span><span>Clique em Analisar</span></li>
+          <li><span className="step-num">3</span><span>Marque os itens e baixe</span></li>
+        </ol>
       )}
 
-      {/* Playlist Content & Selection */}
       {videos.length > 0 && (
-        <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
-          {/* Header Summary */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div className="section-block">
+          <div className="section-head">
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <ListMusic size={18} color="var(--accent-primary)" />
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>{title}</h3>
+              <div className="section-title-row">
+                <ListMusic size={18} className="icon-accent" />
+                <h3 className="section-title">{title}</h3>
               </div>
-              <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                {videos.length} itens encontrados · <strong style={{ color: 'var(--text-primary)' }}>{selectedUrls.size}</strong> selecionados
+              <p className="section-sub">
+                {videos.length} itens · <strong>{selectedUrls.size}</strong> selecionados
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.4rem' }}>
-              <button 
-                type="button" 
-                onClick={handleSelectAll} 
-                disabled={downloading} 
+            <div className="section-tools">
+              <button
+                type="button"
+                onClick={() => setSelectedUrls(new Set(videos.map(v => v.url)))}
+                disabled={downloading}
                 className="btn-icon-action"
               >
                 <CheckSquare size={14} />
                 <span>Todos</span>
               </button>
-              <button 
-                type="button" 
-                onClick={handleSelectNone} 
-                disabled={downloading} 
+              <button
+                type="button"
+                onClick={() => setSelectedUrls(new Set())}
+                disabled={downloading}
                 className="btn-icon-action"
               >
                 <Square size={14} />
@@ -279,53 +284,45 @@ export default function PlaylistDownload() {
             </div>
           </div>
 
-          {/* Video List */}
           <div className="playlist-items-container">
             {videos.map((v, idx) => {
               const isSelected = selectedUrls.has(v.url);
               return (
-                <div 
+                <label
                   key={v.url || idx}
-                  className="playlist-item-row"
-                  onClick={() => !downloading && toggleSelectVideo(v.url)}
-                  style={{
-                    backgroundColor: isSelected ? 'var(--bg-surface-elevated)' : 'transparent',
-                    borderColor: isSelected ? 'var(--border-subtle)' : 'transparent'
-                  }}
+                  className={`playlist-item-row ${isSelected ? 'selected' : ''} ${downloading ? 'is-locked' : ''}`}
                 >
-                  <input 
-                    type="checkbox" 
-                    checked={isSelected} 
-                    onChange={() => {}} 
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelectVideo(v.url)}
                     disabled={downloading}
-                    style={{ cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
                   />
-                  <span style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', width: '24px' }}>
-                    #{idx + 1}
-                  </span>
+                  <span className="playlist-item-index">{idx + 1}</span>
                   <span className="playlist-item-title">{v.title}</span>
-                </div>
+                </label>
               );
             })}
           </div>
 
-          {/* Format Selection Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', marginTop: '1.25rem', alignItems: 'end' }}>
-            <div className="meta-field" style={{ margin: 0 }}>
-              <label className="meta-label">Tipo de Mídia</label>
+          <div className="field-grid field-grid-top">
+            <div className="meta-field">
+              <span className="meta-label">Tipo de mídia</span>
               <div className="segmented-control">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={`segmented-btn ${downloadType === 'video' ? 'active' : ''}`}
+                  aria-pressed={downloadType === 'video'}
                   onClick={() => setDownloadType('video')}
                   disabled={downloading}
                 >
                   <Video size={14} />
                   <span>Vídeo</span>
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={`segmented-btn ${downloadType === 'audio' ? 'active' : ''}`}
+                  aria-pressed={downloadType === 'audio'}
                   onClick={() => setDownloadType('audio')}
                   disabled={downloading}
                 >
@@ -335,17 +332,13 @@ export default function PlaylistDownload() {
               </div>
             </div>
 
-            <div className="meta-field" style={{ margin: 0 }}>
-              <label className="meta-label">
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <FileType size={12} />
-                  <span>Formato de Saída</span>
-                </span>
-              </label>
+            <div className="meta-field">
+              <label className="meta-label" htmlFor="playlist-container">Formato de saída</label>
               {downloadType === 'video' ? (
-                <select 
-                  value={videoContainer} 
-                  onChange={(e) => setVideoContainer(e.target.value)} 
+                <select
+                  id="playlist-container"
+                  value={videoContainer}
+                  onChange={(e) => setVideoContainer(e.target.value)}
                   disabled={downloading}
                   className="custom-select"
                 >
@@ -354,9 +347,10 @@ export default function PlaylistDownload() {
                   ))}
                 </select>
               ) : (
-                <select 
-                  value={audioContainer} 
-                  onChange={(e) => setAudioContainer(e.target.value)} 
+                <select
+                  id="playlist-container"
+                  value={audioContainer}
+                  onChange={(e) => setAudioContainer(e.target.value)}
                   disabled={downloading}
                   className="custom-select"
                 >
@@ -365,31 +359,67 @@ export default function PlaylistDownload() {
                   ))}
                 </select>
               )}
+              <span className="field-hint">Playlists baixam na melhor qualidade disponível.</span>
             </div>
           </div>
 
-          {/* Destination Folder */}
-          <div style={{ marginTop: '1.25rem' }}>
-            <FolderPicker 
-              value={savePath} 
-              onChange={setSavePath} 
-              recentPaths={settings.paths} 
-              disabled={downloading} 
-            />
-          </div>
+          <FolderPicker
+            value={savePath}
+            onChange={setSavePath}
+            recentPaths={settings.paths}
+            disabled={downloading}
+          />
 
-          {/* Download Action */}
-          <button 
+          {(downloading || finished) && (
+            <div className="hud-container">
+              <div className="hud-header">
+                <div className="hud-title">
+                  {downloading && <Loader2 size={14} className="spin-animation" />}
+                  <span>
+                    {downloading
+                      ? `Baixando item ${currentIndex} de ${queueTotal}`
+                      : 'Fila finalizada'}
+                  </span>
+                </div>
+                <span className="hud-percent">{progressPct}%</span>
+              </div>
+              <div
+                className="hud-progress-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPct}
+                aria-label="Progresso da fila"
+              >
+                <div className="hud-progress-fill" style={{ width: `${progressPct}%` }}></div>
+              </div>
+            </div>
+          )}
+
+          {finished && (
+            <Banner
+              kind={errorCount > 0 && doneCount === 0 ? 'error' : 'success'}
+              actions={
+                <button type="button" className="btn-icon-action" onClick={handleOpenFolder}>
+                  <FolderOpen size={14} />
+                  <span>Abrir pasta</span>
+                </button>
+              }
+            >
+              {doneCount} concluídos, {errorCount} com erro
+            </Banner>
+          )}
+
+          <button
             type="button"
-            onClick={handleDownloadSelected} 
-            disabled={downloading || selectedUrls.size === 0} 
-            className="btn-primary"
-            style={{ width: '100%', marginTop: '1.25rem', height: '46px', fontSize: '1rem', justifyContent: 'center' }}
+            onClick={handleDownloadSelected}
+            disabled={downloading || selectedUrls.size === 0}
+            className="btn-primary btn-download btn-lg"
           >
             {downloading ? (
               <>
-                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                <span>Baixando Fila ({currentIndex}/{selectedUrls.size})...</span>
+                <Loader2 size={18} className="spin-animation" />
+                <span>Baixando fila ({currentIndex}/{queueTotal})...</span>
               </>
             ) : (
               <>
@@ -401,14 +431,13 @@ export default function PlaylistDownload() {
         </div>
       )}
 
-      {/* Logs Drawer */}
       {logs.length > 0 && (
-        <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-subtle)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.6rem', fontSize: '0.825rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+        <div className="section-block">
+          <div className="log-title">
             <Terminal size={14} />
-            <span>Registro de Atividades</span>
+            <span>Registro de atividades</span>
           </div>
-          <pre style={{ backgroundColor: 'var(--bg-input)', padding: '0.85rem', borderRadius: 'var(--radius-sm)', maxHeight: '160px', overflowY: 'auto', fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', lineHeight: '1.6' }}>
+          <pre className="log-box">
             {logs.map((l, idx) => (
               <div key={idx}>{l}</div>
             ))}

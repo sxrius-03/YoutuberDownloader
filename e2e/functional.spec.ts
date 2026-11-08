@@ -176,4 +176,166 @@ test.describe('Youtube Downloader - Functional Flows', () => {
 
     await page.screenshot({ path: 'e2e-screenshots/06-history-populated-ui.png', fullPage: true });
   });
+
+  // ---- UI/UX: cor, intuicao e acessibilidade ----
+  const sse = (events: object[]) => events.map(e => `data: ${JSON.stringify(e)}
+
+`).join('');
+  const mockDownload = async (page: any, events: object[]) => {
+    await page.route('**/api/download', (route: any) => route.fulfill({ json: { task_id: 't1' } }));
+    await page.route('**/api/download/progress/*', (route: any) =>
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse(events) }));
+  };
+
+  test('Abas expoem role=tablist/tab e aria-selected', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('tablist')).toBeVisible();
+    const tabs = page.getByRole('tab');
+    await expect(tabs).toHaveCount(3);
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'false');
+    await expect(page.locator('.system-status-pill')).toHaveCount(0);
+  });
+
+  test('Download Unico mostra passo-a-passo antes de analisar', async ({ page }) => {
+    await page.goto('/');
+    const steps = page.locator('.steps-guide');
+    await expect(steps).toBeVisible();
+    await expect(steps).toContainText('Cole o link');
+    await expect(steps).toContainText('Analisar');
+    await expect(steps).toContainText('baixe');
+  });
+
+  test('Botao Baixar tem cor diferente de Analisar e spinner anima', async ({ page }) => {
+    await page.route('**/api/analyze', async (route) => {
+      await new Promise(r => setTimeout(r, 800));
+      await route.fulfill({ json: { title: 'V', resolutions: ['1080'], opts: {} } });
+    });
+    await page.goto('/');
+    await page.locator('input.search-input').fill('https://www.youtube.com/watch?v=x');
+    const analyze = page.locator('.btn-primary:has-text("Analisar")');
+    await analyze.click();
+    const spinName = await page.locator('.spin-animation').first()
+      .evaluate((el) => getComputedStyle(el).animationName);
+    expect(spinName).not.toBe('none');
+    const download = page.locator('.btn-primary.btn-download');
+    await expect(download).toBeVisible();
+    const bgA = await page.locator('.btn-primary:has-text("Analisar")').evaluate((el) => getComputedStyle(el).backgroundColor);
+    const bgD = await download.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bgA).not.toBe(bgD);
+  });
+
+  test('Download concluido mostra Abrir pasta e Baixar outro', async ({ page }) => {
+    await page.route('**/api/analyze', (route) => route.fulfill({ json: { title: 'V', resolutions: ['1080'], opts: {} } }));
+    await mockDownload(page, [{ status: 'finished', progress: 100 }]);
+    await page.goto('/');
+    await page.locator('input.search-input').fill('https://www.youtube.com/watch?v=x');
+    await page.locator('.btn-primary:has-text("Analisar")').click();
+    await page.locator('.btn-download').click();
+    await expect(page.getByRole('button', { name: 'Abrir pasta' })).toBeVisible();
+    await page.screenshot({ path: 'e2e-screenshots/08-single-finished-ui.png', fullPage: true });
+    await page.getByRole('button', { name: 'Baixar outro' }).click();
+    await expect(page.locator('input.meta-input')).toHaveCount(0);
+    await expect(page.locator('.steps-guide')).toBeVisible();
+    await expect(page.locator('input.search-input')).toHaveValue('');
+  });
+
+  test('Seletor de pasta vazio mostra placeholder, nao caminho falso', async ({ page }) => {
+    await page.route('**/api/settings', (route) => route.fulfill({ json: { paths: [] } }));
+    await page.route('**/api/analyze', (route) => route.fulfill({ json: { title: 'V', resolutions: ['1080'], opts: {} } }));
+    await page.goto('/');
+    await page.locator('input.search-input').fill('https://www.youtube.com/watch?v=x');
+    await page.locator('.btn-primary:has-text("Analisar")').click();
+    await expect(page.locator('.folder-path-text')).toHaveText('Nenhuma pasta escolhida');
+  });
+
+  test('Playlist: progresso, qualidade informada, label no item e resumo final', async ({ page }) => {
+    await page.route('**/api/analyze-playlist', (route) => route.fulfill({ json: {
+      title: 'Lista', videos: [
+        { title: 'A', url: 'https://youtube.com/watch?v=1' },
+        { title: 'B', url: 'https://youtube.com/watch?v=2' }] } }));
+    await mockDownload(page, [{ status: 'finished', progress: 100 }]);
+    await page.goto('/');
+    await page.getByRole('tab', { name: /Playlist/ }).click();
+    await page.locator('input.search-input').fill('https://www.youtube.com/playlist?list=PL1');
+    await page.click('.btn-primary:has-text("Analisar")');
+    await expect(page.getByText('melhor qualidade disponível')).toBeVisible();
+    await expect(page.locator('label.playlist-item-row')).toHaveCount(2);
+    await page.click('.btn-download');
+    await expect(page.getByText('2 concluídos, 0 com erro')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Abrir pasta' })).toBeVisible();
+    await page.screenshot({ path: 'e2e-screenshots/09-playlist-finished-ui.png', fullPage: true });
+  });
+
+  test('Historico: chip mostra formato real e vazio leva a Download Unico', async ({ page }) => {
+    await page.route('**/api/history', (route) => route.fulfill({ json: [
+      { title: 'Um', type: 'video (WEBM)', path: 'C:\a.webm', size: 1000, date: '17/08/2026 08:30' },
+      { title: 'Dois', type: 'audio (FLAC)', path: 'C:\b.flac', size: 1000, date: '17/08/2026 08:30' }] }));
+    await page.goto('/');
+    await page.getByRole('tab', { name: /Histórico/ }).click();
+    const chips = page.locator('.history-item-card .chip');
+    await expect(chips.nth(0)).toHaveText('WEBM');
+    await expect(chips.nth(1)).toHaveText('FLAC');
+  });
+
+  test('Historico vazio: botao leva a aba Download Unico', async ({ page }) => {
+    await page.route('**/api/history', (route) => route.fulfill({ json: [] }));
+    await page.goto('/');
+    await page.getByRole('tab', { name: /Histórico/ }).click();
+    await page.getByRole('button', { name: /Baixar um vídeo/ }).click();
+    await expect(page.getByRole('tab', { name: /Download Único/ })).toHaveAttribute('aria-selected', 'true');
+  });
+  for (const width of [1280, 700]) {
+    test(`Select de formato nao corta o texto selecionado (${width}px)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 950 });
+      await page.route('**/api/analyze', (route) => route.fulfill({
+        json: { title: 'Video', resolutions: ['1080'], opts: {} }
+      }));
+      await page.goto('/');
+      await page.locator('input.search-input').fill('https://www.youtube.com/watch?v=example');
+      await page.locator('.btn-primary:has-text("Analisar")').click();
+      const formatSelect = page.locator('select.custom-select', { hasText: 'MP4' });
+      await formatSelect.selectOption('mkv');
+      const m = await formatSelect.evaluate((el: HTMLSelectElement) => {
+        const cs = getComputedStyle(el);
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const text = el.options[el.selectedIndex].text;
+        const textW = ctx.measureText(text).width;
+        const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 24; // seta nativa
+        return { text, textW, avail };
+      });
+      expect(m.text).toContain('MKV');
+      expect(m.textW).toBeLessThanOrEqual(m.avail);
+    });
+  }
+
+  test('Modal de atualizacao: dialog acessivel, foco no botao primario, Esc fecha', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as any).__TAURI_INTERNALS__ = {
+        transformCallback: () => 1,
+        invoke: async (cmd: string) => {
+          if (cmd === 'check_for_updates') return {
+            current_version: '2.0.0', latest_version: '2.1.0',
+            release_notes: '- Correcoes\n- Melhorias', download_url: 'https://example.com/setup.exe'
+          };
+          if (cmd === 'get_settings') return { paths: [] };
+          if (cmd === 'get_history') return [];
+          return null;
+        },
+      };
+    });
+    await page.goto('/');
+    const dialog = page.getByRole('dialog', { name: /Nova Atualização/ });
+    await expect(dialog).toBeVisible({ timeout: 8000 });
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const primary = dialog.getByRole('button', { name: /Atualizar agora/i });
+    await expect(primary).toBeVisible();
+    await expect(primary).toBeFocused();
+    await page.screenshot({ path: 'e2e-screenshots/10-update-modal.png', fullPage: true });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+  });
 });
