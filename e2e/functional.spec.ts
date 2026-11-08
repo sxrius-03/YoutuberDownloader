@@ -191,7 +191,7 @@ test.describe('Youtube Downloader - Functional Flows', () => {
     await page.goto('/');
     await expect(page.getByRole('tablist')).toBeVisible();
     const tabs = page.getByRole('tab');
-    await expect(tabs).toHaveCount(3);
+    await expect(tabs).toHaveCount(4);
     await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
     await tabs.nth(1).click();
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
@@ -337,5 +337,31 @@ test.describe('Youtube Downloader - Functional Flows', () => {
     await page.screenshot({ path: 'e2e-screenshots/10-update-modal.png', fullPage: true });
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
+  });
+
+  test('Aba Ajustes: role=tab, textarea rotulado, salvar mostra feedback', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as any).__TAURI_INTERNALS__ = {
+        transformCallback: () => 1,
+        invoke: async (cmd: string, args: any) => {
+          if (cmd === 'get_settings') return { paths: [], proxies: ['http://a:1'] };
+          if (cmd === 'save_setting_proxies') return { paths: [], proxies: args.proxies.filter((p: string) => p.trim()) };
+          if (cmd === 'get_history') return [];
+          return null;
+        },
+      };
+    });
+    await page.goto('/');
+    const tab = page.getByRole('tab', { name: 'Ajustes' });
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(tab).toHaveAttribute('aria-controls', 'tab-panel');
+    const box = page.getByLabel('Proxies (round-robin)');
+    await expect(box).toHaveValue('http://a:1');
+    await box.fill('socks5://h:9\n\nhttp://b:2');
+    await page.getByRole('button', { name: /Salvar proxies/ }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Proxies salvos com sucesso.' })).toBeVisible();
+    await expect(box).toHaveValue('socks5://h:9\nhttp://b:2');
+    await page.screenshot({ path: 'e2e-screenshots/11-settings-saved.png', fullPage: true });
   });
 });

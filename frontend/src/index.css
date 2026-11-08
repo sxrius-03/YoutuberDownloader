@@ -409,10 +409,33 @@ button.tab-btn.active svg {
 }
 
 .meta-input:disabled,
-.custom-select:disabled {
+.custom-select:disabled,
+.proxy-textarea:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.proxy-textarea {
+  min-height: 140px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.settings-intro {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0.35rem 0 1.25rem;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 
 /* Segmented Buttons Control */
 .segmented-control {

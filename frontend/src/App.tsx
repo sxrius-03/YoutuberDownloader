@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Film, ListMusic, History, Download } from 'lucide-react';
+import { Film, ListMusic, History, Settings as SettingsIcon, Download } from 'lucide-react';
 import SingleDownload from './components/SingleDownload';
 import PlaylistDownload from './components/PlaylistDownload';
 import HistoryList from './components/HistoryList';
+import SettingsPanel from './components/SettingsPanel';
 import UpdateChecker from './components/UpdateChecker';
 
-type Tab = 'single' | 'playlist' | 'history';
+type Tab = 'single' | 'playlist' | 'history' | 'settings';
 
 const TABS: { id: Tab; label: string; Icon: typeof Film }[] = [
   { id: 'single', label: 'Download Único', Icon: Film },
   { id: 'playlist', label: 'Playlist', Icon: ListMusic },
   { id: 'history', label: 'Histórico', Icon: History },
+  { id: 'settings', label: 'Ajustes', Icon: SettingsIcon },
 ];
 
 export default function App() {
@@ -54,6 +56,7 @@ export default function App() {
         {activeTab === 'single' && <SingleDownload />}
         {activeTab === 'playlist' && <PlaylistDownload />}
         {activeTab === 'history' && <HistoryList onGoToDownload={() => setActiveTab('single')} />}
+        {activeTab === 'settings' && <SettingsPanel />}
       </main>
 
       <UpdateChecker />
