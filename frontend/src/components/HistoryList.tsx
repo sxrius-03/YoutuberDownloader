@@ -6,10 +6,12 @@ import {
   Search, 
   Inbox, 
   Calendar,
-  HardDrive
+  HardDrive,
+  Film
 } from 'lucide-react';
 import type { HistoryItem } from '../api/bridge';
 import { getHistory, openFolder } from '../api/bridge';
+import Banner from './Banner';
 
 function formatBytes(bytes: number | string | undefined) {
   if (bytes === undefined || bytes === null || bytes === "N/A" || bytes === "") return "Desconhecido";
@@ -22,16 +24,34 @@ function formatBytes(bytes: number | string | undefined) {
   return parseFloat((num / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-export default function HistoryList() {
+const AUDIO_FORMATS = ['MP3', 'M4A', 'WAV', 'FLAC', 'OPUS'];
+
+// "video (WEBM)" -> { format: "WEBM", isAudio: false }; sem parenteses usa o tipo cru.
+function parseType(type: string | undefined) {
+  const raw = (type || '').trim();
+  const inParens = raw.match(/\(([^)]+)\)/)?.[1]?.trim().toUpperCase();
+  const lower = raw.toLowerCase();
+  const format = inParens || (raw ? raw.toUpperCase() : 'ARQUIVO');
+  const isAudio = lower.includes('audio') || lower.includes('áudio') || AUDIO_FORMATS.includes(format);
+  return { format, isAudio };
+}
+
+interface HistoryListProps {
+  onGoToDownload?: () => void;
+}
+
+export default function HistoryList({ onGoToDownload }: HistoryListProps) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const fetchHistory = () => {
     setLoading(true);
+    setErrorMsg('');
     getHistory()
       .then(data => setHistory(data || []))
-      .catch(() => {})
+      .catch((e: any) => setErrorMsg('Não foi possível carregar o histórico: ' + (e?.message || String(e))))
       .finally(() => setLoading(false));
   };
 
@@ -40,50 +60,51 @@ export default function HistoryList() {
   }, []);
 
   const handleOpenFolder = async (path: string) => {
+    setErrorMsg('');
     try {
       await openFolder(path);
-    } catch {
-      alert("Não foi possível abrir a pasta local.");
+    } catch (e: any) {
+      setErrorMsg('Não foi possível abrir a pasta: ' + (e?.message || String(e)));
     }
   };
 
-  const filteredHistory = history.filter(item => 
-    item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.path?.toLowerCase().includes(searchTerm.toLowerCase())
+  const term = searchTerm.toLowerCase();
+  const filteredHistory = history.filter(item =>
+    item.title?.toLowerCase().includes(term) ||
+    item.path?.toLowerCase().includes(term)
   );
 
   return (
     <div className="surface-card">
-      {/* Header Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
+      <div className="section-head">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <History size={18} color="var(--accent-blue)" />
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Histórico de Downloads</h3>
+          <div className="section-title-row">
+            <History size={18} className="icon-accent" />
+            <h3 className="section-title">Histórico de Downloads</h3>
           </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            {history.length} arquivos baixados no total
+          <p className="section-sub">
+            {history.length === 1 ? '1 arquivo baixado' : `${history.length} arquivos baixados`}
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div className="section-tools">
           {history.length > 0 && (
-            <div className="search-pill-container" style={{ padding: '0.3rem 0.6rem', height: '36px' }}>
-              <Search size={14} color="var(--text-muted)" />
-              <input 
-                type="text" 
-                placeholder="Filtrar histórico..." 
+            <div className="search-pill-container search-pill-sm">
+              <Search size={14} className="icon-muted" />
+              <input
+                type="text"
+                placeholder="Filtrar histórico..."
+                aria-label="Filtrar histórico"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="search-input"
-                style={{ fontSize: '0.825rem', width: '160px' }}
               />
             </div>
           )}
 
-          <button 
+          <button
             type="button"
-            onClick={fetchHistory} 
+            onClick={fetchHistory}
             disabled={loading}
             className="btn-icon-action"
             title="Atualizar lista"
@@ -94,55 +115,46 @@ export default function HistoryList() {
         </div>
       </div>
 
-      {/* History Items or Empty State */}
+      {errorMsg && <Banner kind="error">{errorMsg}</Banner>}
+
       {history.length === 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-          <Inbox size={40} strokeWidth={1.5} style={{ marginBottom: '0.75rem', opacity: 0.6 }} />
-          <p style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Nenhum download registrado</p>
-          <p style={{ fontSize: '0.825rem', marginTop: '0.25rem' }}>Os vídeos e áudios que você baixar aparecerão aqui.</p>
+        <div className="empty-state">
+          <Inbox size={40} strokeWidth={1.5} className="empty-icon" />
+          <p className="empty-title">Nenhum download registrado</p>
+          <p className="empty-sub">Os vídeos e áudios que você baixar aparecerão aqui.</p>
+          {onGoToDownload && (
+            <button type="button" className="btn-primary" onClick={onGoToDownload}>
+              <Film size={16} />
+              <span>Baixar um vídeo</span>
+            </button>
+          )}
         </div>
       ) : filteredHistory.length === 0 ? (
-        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+        <div className="empty-state empty-state-sm">
           Nenhum arquivo encontrado para a busca "{searchTerm}".
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+        <div className="history-list">
           {filteredHistory.map((item, idx) => {
-            const isAudio = item.type?.toLowerCase().includes('audio') || item.type?.toLowerCase().includes('mp3');
+            const { format, isAudio } = parseType(item.type);
             return (
               <div key={idx} className="history-item-card">
-                <div style={{ minWidth: 0, flex: 1, paddingRight: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
-                    <span className={`chip ${isAudio ? 'chip-audio' : 'chip-video'}`}>
-                      {isAudio ? 'MP3' : 'MP4'}
-                    </span>
-                    <h4 
-                      style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                      title={item.title}
-                    >
-                      {item.title}
-                    </h4>
+                <div className="history-item-main">
+                  <div className="history-item-title-row">
+                    <span className={`chip ${isAudio ? 'chip-audio' : 'chip-video'}`}>{format}</span>
+                    <h4 className="history-item-title" title={item.title}>{item.title}</h4>
                   </div>
-
-                  <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.775rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <HardDrive size={12} />
-                      <span>{formatBytes(item.size)}</span>
-                    </div>
-                    {item.date && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <Calendar size={12} />
-                        <span>{item.date}</span>
-                      </div>
-                    )}
+                  <div className="history-item-meta">
+                    <span className="meta-item"><HardDrive size={12} />{formatBytes(item.size)}</span>
+                    {item.date && <span className="meta-item"><Calendar size={12} />{item.date}</span>}
                   </div>
                 </div>
 
-                <button 
+                <button
                   type="button"
                   onClick={() => handleOpenFolder(item.path)}
                   className="btn-icon-action"
-                  title="Abrir pasta no Windows Explorer"
+                  title="Abrir pasta no Explorador de Arquivos"
                 >
                   <FolderOpen size={14} />
                   <span>Abrir Pasta</span>

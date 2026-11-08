@@ -5,8 +5,16 @@ import PlaylistDownload from './components/PlaylistDownload';
 import HistoryList from './components/HistoryList';
 import UpdateChecker from './components/UpdateChecker';
 
+type Tab = 'single' | 'playlist' | 'history';
+
+const TABS: { id: Tab; label: string; Icon: typeof Film }[] = [
+  { id: 'single', label: 'Download Único', Icon: Film },
+  { id: 'playlist', label: 'Playlist', Icon: ListMusic },
+  { id: 'history', label: 'Histórico', Icon: History },
+];
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'single' | 'playlist' | 'history'>('single');
+  const [activeTab, setActiveTab] = useState<Tab>('single');
 
   return (
     <div>
@@ -19,50 +27,36 @@ export default function App() {
             <div className="brand-title">
               <span>Youtube Downloader</span>
             </div>
-            <div className="brand-subtitle">Desktop Native v2.0.9</div>
+            <div className="brand-subtitle">Desktop Native v2.1.0</div>
           </div>
-        </div>
-
-        <div className="system-status-pill">
-          <div className="status-dot"></div>
-          <span>Pronto</span>
         </div>
       </header>
 
-      <nav className="tabs-nav">
-        <button
-          className={`tab-btn ${activeTab === 'single' ? 'active' : ''}`}
-          onClick={() => setActiveTab('single')}
-        >
-          <Film size={16} />
-          <span>Download Único</span>
-        </button>
-
-        <button
-          className={`tab-btn ${activeTab === 'playlist' ? 'active' : ''}`}
-          onClick={() => setActiveTab('playlist')}
-        >
-          <ListMusic size={16} />
-          <span>Playlist</span>
-        </button>
-
-        <button
-          className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
-          onClick={() => setActiveTab('history')}
-        >
-          <History size={16} />
-          <span>Histórico</span>
-        </button>
+      <nav className="tabs-nav" role="tablist" aria-label="Seções do aplicativo">
+        {TABS.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`tab-${id}`}
+            aria-selected={activeTab === id}
+            aria-controls="tab-panel"
+            className={`tab-btn ${activeTab === id ? 'active' : ''}`}
+            onClick={() => setActiveTab(id)}
+          >
+            <Icon size={16} />
+            <span>{label}</span>
+          </button>
+        ))}
       </nav>
 
-      <main>
+      <main id="tab-panel" role="tabpanel" aria-labelledby={`tab-${activeTab}`}>
         {activeTab === 'single' && <SingleDownload />}
         {activeTab === 'playlist' && <PlaylistDownload />}
-        {activeTab === 'history' && <HistoryList />}
+        {activeTab === 'history' && <HistoryList onGoToDownload={() => setActiveTab('single')} />}
       </main>
 
       <UpdateChecker />
     </div>
   );
 }
-
